@@ -43,7 +43,7 @@ const EndpointsDisplay = ({ endpoints }: { endpoints: any[] }) => {
                   </span>
                 ) : (
                   <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-full text-xs font-medium">
-                    {endpoint.authType || "API_KEY"}
+                    Protected
                   </span>
                 )}
                 <svg 
@@ -275,7 +275,6 @@ interface Endpoint {
   method: string
   description?: string
   isPublic?: boolean
-  authType?: string
   pathParams?: Record<string, any> // For path parameters like {"orderId": "String"}
   queryParams?: Record<string, any> // For query parameters
   requestBody?: Record<string, any> // For request body schema

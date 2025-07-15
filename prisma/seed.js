@@ -214,7 +214,7 @@ async function main() {
         method: 'POST',
         description: 'Create a new product',
         isPublic: false,
-        authType: 'API_KEY',
+
         applicationId: app1.id,
         environmentId: app1Prod.id
       },
@@ -224,7 +224,7 @@ async function main() {
         method: 'GET',
         description: 'Retrieve user orders',
         isPublic: false,
-        authType: 'API_KEY',
+
         applicationId: app1.id,
         environmentId: app1Prod.id
       },
@@ -235,7 +235,7 @@ async function main() {
         method: 'GET',
         description: 'Retrieve analytics data',
         isPublic: false,
-        authType: 'API_KEY',
+
         applicationId: app2.id,
         environmentId: app2Prod.id
       },
@@ -245,7 +245,7 @@ async function main() {
         method: 'GET',
         description: 'Generate reports',
         isPublic: false,
-        authType: 'API_KEY',
+
         applicationId: app2.id,
         environmentId: app2Prod.id
       },
@@ -265,7 +265,7 @@ async function main() {
         method: 'GET',
         description: 'Get user profile',
         isPublic: false,
-        authType: 'API_KEY',
+
         applicationId: app3.id,
         environmentId: app3Prod.id
       }

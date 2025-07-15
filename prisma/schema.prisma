@@ -84,8 +84,6 @@ model Endpoint {
   method        String
   description   String?
   isPublic      Boolean      @default(false)
-  authType      String       @default("API_KEY")
-  authConfig    String?
   pathParams    Json?        // Store path parameters as JSON
   queryParams   Json?        // Store query parameters as JSON
   requestBody   Json?        // Store request body schema as JSON
