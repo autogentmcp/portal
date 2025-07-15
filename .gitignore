@@ -24,6 +24,27 @@
 .DS_Store
 *.pem
 
+# OS
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Misc
+*.local
+*.swp
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Prisma
+prisma/dev.db
+prisma/*.sqlite
+prisma/migrations/
+# Optional: ignore generated Prisma client if not checked in
+# /node_modules/.prisma/
+
 # debug
 npm-debug.log*
 yarn-debug.log*
@@ -39,3 +60,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma

@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String?
+  role         String        @default("USER")
+  password     String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  apiKeys      ApiKey[]
+  applications Application[]
+
+  @@map("users")
+}
+
+model Application {
+  id                   String        @id @default(cuid())
+  name                 String
+  description          String?
+  appKey               String        @unique
+  status               String        @default("ACTIVE")
+  authenticationMethod String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  userId               String
+  apiKeys              ApiKey[]
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditLogs            AuditLog[]
+  endpoints            Endpoint[]
+  environments         Environment[]
+
+  @@map("applications")
+}
+
+model Environment {
+  id            String               @id @default(cuid())
+  name          String
+  description   String?
+  status        String               @default("ACTIVE")
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  applicationId String
+  apiKeys       ApiKey[]
+  endpoints     Endpoint[]
+  security      EnvironmentSecurity?
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, name])
+  @@map("environments")
+}
+
+model ApiKey {
+  id            String      @id @default(cuid())
+  name          String
+  token         String      @unique
+  status        String      @default("ACTIVE")
+  expiresAt     DateTime?
+  lastUsed      DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  applicationId String
+  environmentId String
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Endpoint {
+  id            String       @id @default(cuid())
+  name          String
+  path          String
+  method        String
+  description   String?
+  isPublic      Boolean      @default(false)
+  authType      String       @default("API_KEY")
+  authConfig    String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  applicationId String
+  environmentId String?
+  environment   Environment? @relation(fields: [environmentId], references: [id])
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, environmentId, path, method])
+  @@map("endpoints")
+}
+
+model AuditLog {
+  id            String       @id @default(cuid())
+  action        String
+  details       String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime     @default(now())
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model EnvironmentSecurity {
+  id                String      @id @default(cuid())
+  environmentId     String      @unique
+  rateLimitEnabled  Boolean     @default(false)
+  rateLimitRequests Int?
+  rateLimitWindow   Int?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  environment       Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@map("environment_security")
+}
+
+
