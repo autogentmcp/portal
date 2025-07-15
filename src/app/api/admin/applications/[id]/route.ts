@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
+import { deleteApiKey } from '@/lib/api-keys'
 
 // PUT /api/admin/applications/[id] - Update application
 export async function PUT(
@@ -70,10 +71,17 @@ export async function DELETE(
     await prisma.auditLog.deleteMany({
       where: { applicationId: id },
     })
-
-    await prisma.apiKey.deleteMany({
+    
+    // Get all API keys for this application
+    const apiKeys = await prisma.apiKey.findMany({
       where: { applicationId: id },
-    })
+      select: { id: true }
+    });
+    
+    // Delete each API key properly (from both database and vault)
+    for (const key of apiKeys) {
+      await deleteApiKey(key.id);
+    }
 
     await prisma.endpoint.deleteMany({
       where: { applicationId: id },

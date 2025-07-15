@@ -178,6 +178,29 @@ export default function ApplicationDetailPage() {
     }
   }
 
+  const handleRevokeApiKey = async (keyId: string) => {
+    if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/admin/applications/${params.id}/api-keys/${keyId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        // Refresh the application details to update the UI
+        await fetchApplicationDetails();
+      } else {
+        console.error('Error revoking API key:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error revoking API key:', error);
+    }
+  };
+
   const handleCreateApiKey = async (formData: FormData) => {
     const name = formData.get('name') as string
     const environmentId = formData.get('environmentId') as string
@@ -471,7 +494,9 @@ export default function ApplicationDetailPage() {
                         {key.lastUsed ? new Date(key.lastUsed).toLocaleDateString() : 'Never'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                        <button 
+                          onClick={() => handleRevokeApiKey(key.id)}
+                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
                           Revoke
                         </button>
                       </td>

@@ -31,6 +31,7 @@ model Application {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   userId               String
+  healthCheckUrl       String?
   apiKeys              ApiKey[]
   user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   auditLogs            AuditLog[]
@@ -69,9 +70,9 @@ model ApiKey {
   applicationId String
   environmentId String
   userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("api_keys")
 }
@@ -89,8 +90,8 @@ model Endpoint {
   updatedAt     DateTime     @updatedAt
   applicationId String
   environmentId String?
-  environment   Environment? @relation(fields: [environmentId], references: [id])
   application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  environment   Environment? @relation(fields: [environmentId], references: [id])
 
   @@unique([applicationId, environmentId, path, method])
   @@map("endpoints")
@@ -121,5 +122,3 @@ model EnvironmentSecurity {
 
   @@map("environment_security")
 }
-
-

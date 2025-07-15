@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
-import { generateApiToken } from '@/lib/utils'
+import { createApiKey } from '@/lib/api-keys'
 
 // POST /api/admin/applications/[id]/api-keys - Create new API key
 export async function POST(
@@ -36,38 +36,42 @@ export async function POST(
     }
 
     // Check if environment exists and belongs to this application
-    const environment = await prisma.environment.findFirst({
+    const envCheck = await prisma.environment.findFirst({
       where: {
         id: environmentId,
         applicationId: id,
       },
     })
 
-    if (!environment) {
+    if (!envCheck) {
       return NextResponse.json({ error: 'Environment not found' }, { status: 404 })
     }
 
-    const apiKey = await prisma.apiKey.create({
-      data: {
-        name,
-        token: generateApiToken(),
-        status: 'ACTIVE',
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        applicationId: id,
-        environmentId,
-        userId: user.id,
-      },
-      include: {
-        environment: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    })
+    // Use the secure API key creation which handles vault storage and hashing
+    const apiKey = await createApiKey({
+      name,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      applicationId: id,
+      environmentId,
+      userId: user.id,
+    });
+    
+    // Fetch the environment details for the response
+    const environment = await prisma.environment.findUnique({
+      where: { id: environmentId },
+      select: {
+        id: true,
+        name: true,
+      }
+    });
+    
+    // Create a response object with environment details
+    const apiKeyResponse = {
+      ...apiKey,
+      environment
+    }
 
-    return NextResponse.json(apiKey, { status: 201 })
+    return NextResponse.json(apiKeyResponse, { status: 201 })
   } catch (error) {
     console.error('Error creating API key:', error)
     return NextResponse.json(

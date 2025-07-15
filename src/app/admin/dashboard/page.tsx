@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import ApplicationFormModal, { ApplicationFormData } from '@/components/admin/application-form-modal'
 import ConfirmationModal from '@/components/admin/confirmation-modal'
 import ThemeToggle from '@/components/common/theme-toggle'
+import { ApiKeySecurityNotice } from '@/components/api-key-security-notice'
 
 interface Application {
   id: string
@@ -206,6 +207,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+      {/* Security Notice */}
+      <ApiKeySecurityNotice />
+      
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
