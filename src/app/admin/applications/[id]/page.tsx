@@ -6,6 +6,188 @@ import { ArrowLeftIcon, PlusIcon, KeyIcon, ShieldCheckIcon, ServerIcon } from '@
 import SettingsSection from './settings-section'
 import ThemeToggle from '@/components/common/theme-toggle'
 
+// Endpoint display component to avoid hooks inside of loops
+const EndpointsDisplay = ({ endpoints }: { endpoints: any[] }) => {
+  const [expandedEndpoints, setExpandedEndpoints] = useState<Record<string, boolean>>({});
+  
+  const toggleEndpoint = (id: string) => {
+    setExpandedEndpoints(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+  
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Endpoints</h3>
+      <div className="space-y-4">
+        {endpoints.map((endpoint) => (
+          <div key={endpoint.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-4">
+            <div 
+              className="flex items-center justify-between mb-3 cursor-pointer"
+              onClick={() => toggleEndpoint(endpoint.id)}
+            >
+              <div>
+                <h4 className="font-medium text-gray-900 dark:text-gray-100">{endpoint.name}</h4>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <span className="font-mono bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded text-xs mr-2">
+                    {endpoint.method}
+                  </span>
+                  {endpoint.path}
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                {endpoint.isPublic ? (
+                  <span className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 px-2 py-1 rounded-full text-xs font-medium">
+                    Public
+                  </span>
+                ) : (
+                  <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-2 py-1 rounded-full text-xs font-medium">
+                    {endpoint.authType || "API_KEY"}
+                  </span>
+                )}
+                <svg 
+                  className={`h-5 w-5 text-gray-500 transform transition-transform ${expandedEndpoints[endpoint.id] ? 'rotate-180' : ''}`}
+                  fill="none" 
+                  viewBox="0 0 24 24" 
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+            
+            {/* Endpoint parameters section - only shown when expanded */}
+            {expandedEndpoints[endpoint.id] && (
+              <div className="mt-3 space-y-3 border-t border-gray-200 dark:border-gray-600 pt-3">
+                {endpoint.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {endpoint.description}
+                  </p>
+                )}
+                
+                {/* Path Parameters */}
+                {(() => {
+                  // Safely parse pathParams which might be a JSON string or object
+                  let parsedPathParams;
+                  try {
+                    parsedPathParams = typeof endpoint.pathParams === 'string' 
+                      ? JSON.parse(endpoint.pathParams) 
+                      : endpoint.pathParams;
+                    
+                    if (!parsedPathParams || Object.keys(parsedPathParams).length === 0) {
+                      return null;
+                    }
+                    
+                    return (
+                      <div className="bg-gray-100 dark:bg-gray-600 rounded-md p-3">
+                        <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">Path Parameters</h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(parsedPathParams).map(([key, type]) => (
+                            <div key={key} className="flex flex-col">
+                              <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{key}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{type as string}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+                
+                {/* Query Parameters */}
+                {(() => {
+                  // Safely parse queryParams which might be a JSON string or object
+                  let parsedQueryParams;
+                  try {
+                    parsedQueryParams = typeof endpoint.queryParams === 'string' 
+                      ? JSON.parse(endpoint.queryParams) 
+                      : endpoint.queryParams;
+                    
+                    if (!parsedQueryParams || Object.keys(parsedQueryParams).length === 0) {
+                      return null;
+                    }
+                    
+                    return (
+                      <div className="bg-gray-100 dark:bg-gray-600 rounded-md p-3">
+                        <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">Query Parameters</h5>
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(parsedQueryParams).map(([key, type]) => (
+                            <div key={key} className="flex flex-col">
+                              <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{key}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{type as string}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+                
+                {/* Request Body */}
+                {(() => {
+                  // Safely parse requestBody which might be a JSON string or object
+                  let parsedRequestBody;
+                  try {
+                    parsedRequestBody = typeof endpoint.requestBody === 'string' 
+                      ? JSON.parse(endpoint.requestBody) 
+                      : endpoint.requestBody;
+                    
+                    if (!parsedRequestBody || Object.keys(parsedRequestBody).length === 0) {
+                      return null;
+                    }
+                    
+                    return (
+                      <div className="bg-gray-100 dark:bg-gray-600 rounded-md p-3">
+                        <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">Request Body</h5>
+                        <pre className="text-xs bg-gray-200 dark:bg-gray-700 p-2 rounded overflow-x-auto">
+                          {JSON.stringify(parsedRequestBody, null, 2)}
+                        </pre>
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+                
+                {/* Response Body */}
+                {(() => {
+                  // Safely parse responseBody which might be a JSON string or object
+                  let parsedResponseBody;
+                  try {
+                    parsedResponseBody = typeof endpoint.responseBody === 'string' 
+                      ? JSON.parse(endpoint.responseBody) 
+                      : endpoint.responseBody;
+                    
+                    if (!parsedResponseBody || Object.keys(parsedResponseBody).length === 0) {
+                      return null;
+                    }
+                    
+                    return (
+                      <div className="bg-gray-100 dark:bg-gray-600 rounded-md p-3">
+                        <h5 className="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">Response Body</h5>
+                        <pre className="text-xs bg-gray-200 dark:bg-gray-700 p-2 rounded overflow-x-auto">
+                          {JSON.stringify(parsedResponseBody, null, 2)}
+                        </pre>
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 interface Application {
   id: string
   name: string
@@ -89,9 +271,17 @@ interface ApiKey {
 interface Endpoint {
   id: string
   name: string
-  url: string
+  path: string // Changed from url to match prisma schema
   method: string
+  description?: string
+  isPublic?: boolean
+  authType?: string
+  pathParams?: Record<string, any> // For path parameters like {"orderId": "String"}
+  queryParams?: Record<string, any> // For query parameters
+  requestBody?: Record<string, any> // For request body schema
+  responseBody?: Record<string, any> // For response body schema
   createdAt: string
+  environmentId?: string
 }
 
 export default function ApplicationDetailPage() {
@@ -344,24 +534,7 @@ export default function ApplicationDetailPage() {
             </div>
 
             {/* Endpoints */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Endpoints</h3>
-              <div className="space-y-3">
-                {application.endpoints.map((endpoint) => (
-                  <div key={endpoint.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
-                    <div>
-                      <h4 className="font-medium text-gray-900 dark:text-gray-100">{endpoint.name}</h4>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        <span className="font-mono bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded text-xs mr-2">
-                          {endpoint.method}
-                        </span>
-                        {endpoint.url}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <EndpointsDisplay endpoints={application.endpoints} />
           </div>
         )}
 

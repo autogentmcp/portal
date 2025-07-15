@@ -55,6 +55,7 @@ export async function GET(
           },
         },
         endpoints: {
+          // Include all fields so we get the JSON fields like pathParams, queryParams, etc.
           orderBy: {
             createdAt: 'desc',
           },

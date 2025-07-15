@@ -86,6 +86,10 @@ model Endpoint {
   isPublic      Boolean      @default(false)
   authType      String       @default("API_KEY")
   authConfig    String?
+  pathParams    Json?        // Store path parameters as JSON
+  queryParams   Json?        // Store query parameters as JSON
+  requestBody   Json?        // Store request body schema as JSON
+  responseBody  Json?        // Store response body schema as JSON
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   applicationId String
