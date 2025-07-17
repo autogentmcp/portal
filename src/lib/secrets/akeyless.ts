@@ -176,6 +176,40 @@ export class AkeylessProvider implements SecretProvider {
   }
 
   /**
+   * Store credentials object in Akeyless with proper encoding for sensitive fields
+   * @param key The key to store the credentials under
+   * @param credentials The credentials object
+   * @returns Promise resolving to boolean indicating success
+   */
+  async storeCredentials(key: string, credentials: Record<string, any>): Promise<boolean> {
+    try {
+      const credentialsJson = JSON.stringify(credentials);
+      return await this.storeSecret(key, credentialsJson);
+    } catch (error) {
+      logError('Error storing credentials in Akeyless', error);
+      return false;
+    }
+  }
+
+  /**
+   * Retrieve credentials object from Akeyless with proper decoding for sensitive fields
+   * @param key The key to retrieve
+   * @returns Promise resolving to the credentials object or null if not found
+   */
+  async getCredentials(key: string): Promise<Record<string, any> | null> {
+    try {
+      const credentialsJson = await this.getSecret(key);
+      if (!credentialsJson) {
+        return null;
+      }
+      return JSON.parse(credentialsJson);
+    } catch (error) {
+      logError('Error retrieving credentials from Akeyless', error);
+      return null;
+    }
+  }
+
+  /**
    * Test connection to Akeyless
    */
   async testConnection(): Promise<boolean> {

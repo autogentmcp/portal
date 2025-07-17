@@ -93,7 +93,8 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Create default environments
+    // Create default environments without base domains
+    // Admin will need to set base domains later
     const environments = ['development', 'staging', 'production']
     await Promise.all(
       environments.map(env =>

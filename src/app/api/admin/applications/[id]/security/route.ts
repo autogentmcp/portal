@@ -41,7 +41,7 @@ export async function PUT(
           const credentialsKey = `app_${id}_auth_credentials`
           
           // Store the credentials in the vault
-          await secretManager.storeSecuritySetting(credentialsKey, JSON.stringify(settings.credentials))
+          await secretManager.storeCredentials(credentialsKey, settings.credentials)
           logInfo(`Stored authentication credentials in vault for application ${id}`)
         } else {
           logError('No secret provider available for storing credentials')
@@ -122,10 +122,10 @@ export async function GET(
       
       if (secretManager.hasProvider()) {
         const credentialsKey = `app_${id}_auth_credentials`
-        const credentialsJson = await secretManager.getSecuritySetting(credentialsKey)
+        const credentials = await secretManager.getCredentials(credentialsKey)
         
-        if (credentialsJson) {
-          result.credentials = JSON.parse(credentialsJson)
+        if (credentials) {
+          result.credentials = credentials
           logInfo(`Retrieved authentication credentials from vault for application ${id}`)
         }
       }

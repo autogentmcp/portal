@@ -1,11 +1,12 @@
 import * as vault from 'node-vault';
 import { SecretProvider, HashiCorpVaultConfig } from './types';
-import { logError, logInfo } from '@/lib/utils/logger';
+import { BaseSecretProvider } from './base-provider';
+import { logError, logInfo } from '../utils/logger';
 
 /**
  * HashiCorp Vault implementation of SecretProvider using the official node-vault client
  */
-export class HashiCorpVaultProvider implements SecretProvider {
+export class HashiCorpVaultProvider extends BaseSecretProvider implements SecretProvider {
   private readonly client: vault.client;
   private readonly mount: string;
   private readonly path: string;
@@ -15,6 +16,8 @@ export class HashiCorpVaultProvider implements SecretProvider {
    * @param config The vault configuration
    */
   constructor(config: HashiCorpVaultConfig) {
+    super();
+    
     // Create client options
     const options: vault.VaultOptions = {
       apiVersion: 'v1',
@@ -63,17 +66,20 @@ export class HashiCorpVaultProvider implements SecretProvider {
       
       logInfo(`Storing secret in HashiCorp Vault with key: ${secretPath}`);
       
+      // Encode the value to prevent tampering and formatting issues
+      const encodedValue = this.encodeSecretValue(value);
+      
       // Different API for KV v1 vs KV v2
       if (this.mount === 'secret') {
         // KV v2
         const fullPath = `${this.mount}/data/${secretPath}`;
         logInfo(`Using KV v2 API, full path: ${fullPath}`);
-        await this.client.write(fullPath, { data: { value } });
+        await this.client.write(fullPath, { data: { value: encodedValue } });
       } else {
         // KV v1
         const fullPath = `${this.mount}/${secretPath}`;
         logInfo(`Using KV v1 API, full path: ${fullPath}`);
-        await this.client.write(fullPath, { value });
+        await this.client.write(fullPath, { value: encodedValue });
       }
       
       return true;
@@ -118,14 +124,16 @@ export class HashiCorpVaultProvider implements SecretProvider {
         logInfo(`Using KV v2 API for read, full path: ${fullPath}`);
         result = await this.client.read(fullPath);
         logInfo(`KV v2 read result: ${JSON.stringify(result?.data)}`);
-        return result?.data?.data?.value || null;
+        const encodedValue = result?.data?.data?.value || null;
+        return encodedValue ? this.decodeSecretValue(encodedValue) : null;
       } else {
         // KV v1
         const fullPath = `${this.mount}/${secretPath}`;
         logInfo(`Using KV v1 API for read, full path: ${fullPath}`);
         result = await this.client.read(fullPath);
         logInfo(`KV v1 read result: ${JSON.stringify(result?.data)}`);
-        return result?.data?.value || null;
+        const encodedValue = result?.data?.value || null;
+        return encodedValue ? this.decodeSecretValue(encodedValue) : null;
       }
     } catch (error: any) {
       // Handle not found errors - Vault returns a 404 status
@@ -149,6 +157,98 @@ export class HashiCorpVaultProvider implements SecretProvider {
         logError(`Vault Read Request Headers: ${JSON.stringify(error.request.headers)}`);
       }
       
+      throw error;
+    }
+  }
+
+  /**
+   * Store credentials object in HashiCorp Vault with proper encoding for sensitive fields
+   * @param key The secret key
+   * @param credentials The credentials object
+   */
+  async storeCredentials(key: string, credentials: Record<string, any>): Promise<boolean> {
+    try {
+      const secretPath = `${this.path}/${key}`;
+      
+      logInfo(`Storing credentials in HashiCorp Vault with key: ${secretPath}`);
+      
+      // Process credentials and encode sensitive fields
+      const processedCredentials = this.processCredentialsForStorage(credentials);
+      
+      // Different API for KV v1 vs KV v2
+      if (this.mount === 'secret') {
+        // KV v2
+        const fullPath = `${this.mount}/data/${secretPath}`;
+        logInfo(`Using KV v2 API, full path: ${fullPath}`);
+        await this.client.write(fullPath, { data: processedCredentials });
+      } else {
+        // KV v1
+        const fullPath = `${this.mount}/${secretPath}`;
+        logInfo(`Using KV v1 API, full path: ${fullPath}`);
+        await this.client.write(fullPath, processedCredentials);
+      }
+      
+      return true;
+    } catch (error: any) {
+      logError('Error storing credentials in HashiCorp Vault', error);
+      
+      // Log detailed error information
+      if (error.response) {
+        logError(`Vault API Response Status: ${error.response.statusCode}`);
+        logError(`Vault API Response Headers: ${JSON.stringify(error.response.headers)}`);
+        logError(`Vault API Response Body: ${JSON.stringify(error.response.body)}`);
+      }
+      
+      return false;
+    }
+  }
+
+  /**
+   * Retrieve credentials from HashiCorp Vault with proper decoding for sensitive fields
+   * @param key The secret key
+   */
+  async getCredentials(key: string): Promise<Record<string, any> | null> {
+    try {
+      const secretPath = `${this.path}/${key}`;
+      
+      logInfo(`Getting credentials from HashiCorp Vault with key: ${secretPath}`);
+      
+      let result;
+      
+      // Different API for KV v1 vs KV v2
+      if (this.mount === 'secret') {
+        // KV v2
+        const fullPath = `${this.mount}/data/${secretPath}`;
+        logInfo(`Using KV v2 API for read, full path: ${fullPath}`);
+        result = await this.client.read(fullPath);
+        logInfo(`KV v2 read result: ${JSON.stringify(result?.data)}`);
+        
+        if (!result?.data?.data) {
+          return null;
+        }
+        
+        return this.processCredentialsFromStorage(result.data.data);
+      } else {
+        // KV v1
+        const fullPath = `${this.mount}/${secretPath}`;
+        logInfo(`Using KV v1 API for read, full path: ${fullPath}`);
+        result = await this.client.read(fullPath);
+        logInfo(`KV v1 read result: ${JSON.stringify(result?.data)}`);
+        
+        if (!result?.data) {
+          return null;
+        }
+        
+        return this.processCredentialsFromStorage(result.data);
+      }
+    } catch (error: any) {
+      // Handle not found errors - Vault returns a 404 status
+      if (error.response && error.response.statusCode === 404) {
+        logInfo(`Credentials not found (404) for key: ${key}`);
+        return null;
+      }
+      
+      logError('Error retrieving credentials from HashiCorp Vault', error);
       throw error;
     }
   }

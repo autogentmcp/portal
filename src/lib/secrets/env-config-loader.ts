@@ -4,7 +4,7 @@ import {
   AkeylessConfig, 
   ProviderType 
 } from './env-types';
-import { logInfo, logError } from '@/lib/utils/logger';
+import { logInfo, logError } from '../utils/logger';
 
 /**
  * Loads secret provider configuration from environment variables

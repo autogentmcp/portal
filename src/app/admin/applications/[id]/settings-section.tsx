@@ -91,7 +91,7 @@ export default function SettingsSection({
         </div>
       )}
 
-      {/* Application-Level Settings */}
+      {/* Application Settings */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">
           Application Settings
@@ -130,709 +130,36 @@ export default function SettingsSection({
               </select>
             </div>
 
-            {/* Credential input fields based on authentication method */}
-            {applicationSettings.authenticationMethod && (
-              <div className="space-y-4">
-                {/* Azure Subscription */}
-                {applicationSettings.authenticationMethod === 'azure_subscription' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Azure Subscription Credentials</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subscription ID</label>
-                        <input
-                          type="text"
-                          value={applicationSettings.credentials?.subscriptionId || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, subscriptionId: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter Azure subscription ID"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tenant ID</label>
-                        <input
-                          type="text"
-                          value={applicationSettings.credentials?.tenantId || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, tenantId: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter Azure tenant ID"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Azure APIM */}
-                {applicationSettings.authenticationMethod === 'azure_apim' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Azure APIM Credentials</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subscription Key</label>
-                        <input
-                          type="password"
-                          value={applicationSettings.credentials?.subscriptionKey || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, subscriptionKey: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter APIM subscription key"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">APIM URL</label>
-                        <input
-                          type="url"
-                          value={applicationSettings.credentials?.apimUrl || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, apimUrl: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="https://your-apim.azure-api.net"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* AWS IAM */}
-                {applicationSettings.authenticationMethod === 'aws_iam' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">AWS IAM Credentials</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Access Key ID</label>
-                        <input
-                          type="text"
-                          value={applicationSettings.credentials?.accessKeyId || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, accessKeyId: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter AWS access key ID"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Secret Access Key</label>
-                        <input
-                          type="password"
-                          value={applicationSettings.credentials?.secretAccessKey || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, secretAccessKey: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter AWS secret access key"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Region</label>
-                      <input
-                        type="text"
-                        value={applicationSettings.credentials?.region || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, region: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="us-east-1"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* GCP Service Account */}
-                {applicationSettings.authenticationMethod === 'gcp_service_account' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">GCP Service Account Credentials</h5>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Service Account JSON</label>
-                      <textarea
-                        value={applicationSettings.credentials?.serviceAccountJson || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, serviceAccountJson: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Paste your service account JSON here"
-                        rows={4}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* OAuth 2.0 */}
-                {applicationSettings.authenticationMethod === 'oauth2' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">OAuth 2.0 Credentials</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Client ID</label>
-                        <input
-                          type="text"
-                          value={applicationSettings.credentials?.clientId || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, clientId: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter OAuth client ID"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Client Secret</label>
-                        <input
-                          type="password"
-                          value={applicationSettings.credentials?.clientSecret || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, clientSecret: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter OAuth client secret"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Authorization URL</label>
-                      <input
-                        type="url"
-                        value={applicationSettings.credentials?.authUrl || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, authUrl: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="https://oauth.provider.com/authorize"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* JWT Token */}
-                {applicationSettings.authenticationMethod === 'jwt' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">JWT Configuration</h5>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JWT Secret</label>
-                      <input
-                        type="password"
-                        value={applicationSettings.credentials?.jwtSecret || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, jwtSecret: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Enter JWT secret key"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Issuer</label>
-                      <input
-                        type="text"
-                        value={applicationSettings.credentials?.issuer || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, issuer: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Enter JWT issuer"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* API Key */}
-                {applicationSettings.authenticationMethod === 'api_key' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">API Key Configuration</h5>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">API Key</label>
-                      <input
-                        type="password"
-                        value={applicationSettings.credentials?.apiKey || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, apiKey: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Enter API key"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Bearer Token */}
-                {applicationSettings.authenticationMethod === 'bearer_token' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Bearer Token Configuration</h5>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bearer Token</label>
-                      <input
-                        type="password"
-                        value={applicationSettings.credentials?.bearerToken || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, bearerToken: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Enter bearer token"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Basic Authentication */}
-                {applicationSettings.authenticationMethod === 'basic_auth' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Basic Authentication</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Username</label>
-                        <input
-                          type="text"
-                          value={applicationSettings.credentials?.username || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, username: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter username"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Password</label>
-                        <input
-                          type="password"
-                          value={applicationSettings.credentials?.password || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, password: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter password"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Signature Authentication */}
-                {applicationSettings.authenticationMethod === 'signature_auth' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Signature Authentication</h5>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Private Key</label>
-                        <textarea
-                          value={applicationSettings.credentials?.privateKey || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, privateKey: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter private key for signature"
-                          rows={4}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Public Key</label>
-                        <textarea
-                          value={applicationSettings.credentials?.publicKey || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, publicKey: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter public key for verification"
-                          rows={4}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Algorithm</label>
-                        <select
-                          value={applicationSettings.credentials?.algorithm || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, algorithm: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        >
-                          <option value="">Select algorithm</option>
-                          <option value="RS256">RS256</option>
-                          <option value="RS384">RS384</option>
-                          <option value="RS512">RS512</option>
-                          <option value="ES256">ES256</option>
-                          <option value="ES384">ES384</option>
-                          <option value="ES512">ES512</option>
-                          <option value="PS256">PS256</option>
-                          <option value="PS384">PS384</option>
-                          <option value="PS512">PS512</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Key ID (Optional)</label>
-                        <input
-                          type="text"
-                          value={applicationSettings.credentials?.keyId || ''}
-                          onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, keyId: e.target.value }
-                          }))}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                          placeholder="Enter key identifier"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        id="includeDynamicFields"
-                        checked={applicationSettings.credentials?.includeDynamicFields || false}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, includeDynamicFields: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="includeDynamicFields" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Include dynamic fields in signature (timestamp, nonce, etc.)
-                      </label>
-                    </div>
-                    {applicationSettings.credentials?.includeDynamicFields && (
-                      <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-md space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Dynamic Field to Include</label>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                id="timestamp"
-                                name="dynamicField"
-                                value="timestamp"
-                                checked={applicationSettings.credentials?.dynamicField === 'timestamp'}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { 
-                                    ...prev.credentials, 
-                                    dynamicField: e.target.value
-                                  }
-                                }))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <label htmlFor="timestamp" className="text-sm text-gray-700 dark:text-gray-300">
-                                Timestamp
-                              </label>
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                id="nonce"
-                                name="dynamicField"
-                                value="nonce"
-                                checked={applicationSettings.credentials?.dynamicField === 'nonce'}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { 
-                                    ...prev.credentials, 
-                                    dynamicField: e.target.value
-                                  }
-                                }))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <label htmlFor="nonce" className="text-sm text-gray-700 dark:text-gray-300">
-                                Nonce
-                              </label>
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                id="method"
-                                name="dynamicField"
-                                value="method"
-                                checked={applicationSettings.credentials?.dynamicField === 'method'}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { 
-                                    ...prev.credentials, 
-                                    dynamicField: e.target.value
-                                  }
-                                }))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <label htmlFor="method" className="text-sm text-gray-700 dark:text-gray-300">
-                                HTTP Method
-                              </label>
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                id="uri"
-                                name="dynamicField"
-                                value="uri"
-                                checked={applicationSettings.credentials?.dynamicField === 'uri'}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { 
-                                    ...prev.credentials, 
-                                    dynamicField: e.target.value
-                                  }
-                                }))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <label htmlFor="uri" className="text-sm text-gray-700 dark:text-gray-300">
-                                Request URI
-                              </label>
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                id="bodyHash"
-                                name="dynamicField"
-                                value="bodyHash"
-                                checked={applicationSettings.credentials?.dynamicField === 'bodyHash'}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { 
-                                    ...prev.credentials, 
-                                    dynamicField: e.target.value
-                                  }
-                                }))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <label htmlFor="bodyHash" className="text-sm text-gray-700 dark:text-gray-300">
-                                Body Hash
-                              </label>
-                            </div>
-                            
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                id="other"
-                                name="dynamicField"
-                                value="other"
-                                checked={applicationSettings.credentials?.dynamicField === 'other'}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { 
-                                    ...prev.credentials, 
-                                    dynamicField: e.target.value
-                                  }
-                                }))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                              />
-                              <label htmlFor="other" className="text-sm text-gray-700 dark:text-gray-300">
-                                Other (Custom)
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {applicationSettings.credentials?.dynamicField === 'other' && (
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom Field Name</label>
-                              <input
-                                type="text"
-                                value={applicationSettings.credentials?.customDynamicField || ''}
-                                onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                                  ...prev, 
-                                  credentials: { ...prev.credentials, customDynamicField: e.target.value }
-                                }))}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                                placeholder="Enter custom field name (e.g., api_version, client_id)"
-                              />
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                Enter a single word to use as the custom field name in the signature
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md">
-                          <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
-                            <strong>Selected Dynamic Field:</strong>
-                          </p>
-                          <ul className="text-xs text-blue-700 dark:text-blue-300 list-disc list-inside space-y-1">
-                            {applicationSettings.credentials?.dynamicField === 'timestamp' && <li>Timestamp (current Unix timestamp)</li>}
-                            {applicationSettings.credentials?.dynamicField === 'nonce' && <li>Nonce (random UUID for replay protection)</li>}
-                            {applicationSettings.credentials?.dynamicField === 'method' && <li>HTTP Method (GET, POST, PUT, etc.)</li>}
-                            {applicationSettings.credentials?.dynamicField === 'uri' && <li>Request URI (path and query parameters)</li>}
-                            {applicationSettings.credentials?.dynamicField === 'bodyHash' && <li>Body Hash (SHA256 hash of request body)</li>}
-                            {applicationSettings.credentials?.dynamicField === 'other' && (
-                              <li>Custom field: {applicationSettings.credentials?.customDynamicField || 'Enter field name above'}</li>
-                            )}
-                            {!applicationSettings.credentials?.dynamicField && (
-                              <li className="text-gray-500 dark:text-gray-400">No dynamic field selected</li>
-                            )}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Custom Authentication */}
-                {applicationSettings.authenticationMethod === 'custom' && (
-                  <div className="space-y-3">
-                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Custom Authentication</h5>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom Configuration</label>
-                      <textarea
-                        value={applicationSettings.credentials?.customConfig || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, customConfig: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="Enter custom authentication configuration (JSON format)"
-                        rows={6}
-                      />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Enter your custom authentication configuration in JSON format. This will be securely stored in your vault.
-                      </p>
-                    </div>
-                    
-                    {/* Multiple Custom Headers */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom Headers</label>
-                      {(applicationSettings.credentials?.customHeaders || []).map((header: any, index: number) => (
-                        <div key={index} className="flex items-center space-x-2 mb-2">
-                          <input
-                            type="text"
-                            value={header.name || ''}
-                            onChange={(e) => {
-                              const newHeaders = [...(applicationSettings.credentials?.customHeaders || [])]
-                              newHeaders[index] = { ...newHeaders[index], name: e.target.value }
-                              setApplicationSettings((prev: any) => ({ 
-                                ...prev, 
-                                credentials: { ...prev.credentials, customHeaders: newHeaders }
-                              }))
-                            }}
-                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                            placeholder="Header name"
-                          />
-                          <input
-                            type="password"
-                            value={header.value || ''}
-                            onChange={(e) => {
-                              const newHeaders = [...(applicationSettings.credentials?.customHeaders || [])]
-                              newHeaders[index] = { ...newHeaders[index], value: e.target.value }
-                              setApplicationSettings((prev: any) => ({ 
-                                ...prev, 
-                                credentials: { ...prev.credentials, customHeaders: newHeaders }
-                              }))
-                            }}
-                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                            placeholder="Header value"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newHeaders = [...(applicationSettings.credentials?.customHeaders || [])]
-                              newHeaders.splice(index, 1)
-                              setApplicationSettings((prev: any) => ({ 
-                                ...prev, 
-                                credentials: { ...prev.credentials, customHeaders: newHeaders }
-                              }))
-                            }}
-                            className="px-3 py-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newHeaders = [...(applicationSettings.credentials?.customHeaders || []), { name: '', value: '' }]
-                          setApplicationSettings((prev: any) => ({ 
-                            ...prev, 
-                            credentials: { ...prev.credentials, customHeaders: newHeaders }
-                          }))
-                        }}
-                        className="px-4 py-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 text-sm"
-                      >
-                        + Add Header
-                      </button>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Validation Endpoint (Optional)</label>
-                      <input
-                        type="url"
-                        value={applicationSettings.credentials?.validationEndpoint || ''}
-                        onChange={(e) => setApplicationSettings((prev: any) => ({ 
-                          ...prev, 
-                          credentials: { ...prev.credentials, validationEndpoint: e.target.value }
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                        placeholder="https://api.example.com/validate"
-                      />
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Optional endpoint to validate the custom authentication token
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Show note about where credentials are stored */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
-                  <p className="text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Note:</strong> These credentials will be securely stored in your configured vault. 
-                    They are encrypted and never stored in plain text in the database.
-                  </p>
-                </div>
-              </div>
-            )}
-
             <div className="flex justify-end">
               <button
                 onClick={handleSaveApplicationSettings}
                 disabled={loading}
                 className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:opacity-50"
               >
-                {loading ? 'Saving...' : 'Save Application Settings'}
+                {loading ? 'Saving...' : 'Save App Settings'}
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Environment-Specific Settings */}
+      {/* Environment Settings */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">
-            Environment Settings
-            <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">(rate limiting only)</span>
-          </h4>
-          
-          {/* Environment Selector */}
-          <div className="flex items-center space-x-4">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Environment:</label>
+        <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          Environment Settings
+        </h4>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Environment</label>
             <select
               value={activeEnvironment || ''}
               onChange={(e) => {
-                setActiveEnvironment(e.target.value)
-                loadEnvironmentSettings(e.target.value)
+                const envId = e.target.value
+                setActiveEnvironment(envId)
+                loadEnvironmentSettings(envId)
               }}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             >
               <option value="">Select environment</option>
               {application.environments.map((env: any) => (
@@ -844,6 +171,836 @@ export default function SettingsSection({
 
         {activeEnvironment && (
           <div className="space-y-4">
+            {/* Authentication Settings */}
+            <div className="space-y-4">
+              <h4 className="text-base font-medium text-gray-900 dark:text-gray-100">Authentication Settings</h4>
+              
+              {/* Show auth method from application settings */}
+              {applicationSettings?.authenticationMethod && (
+                <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-md">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Authentication Method: <span className="font-medium">{applicationSettings.authenticationMethod.replace('_', ' ').toUpperCase()}</span>
+                  </p>
+                </div>
+              )}
+
+              {/* Credential input fields based on authentication method */}
+              {applicationSettings?.authenticationMethod && (
+                <div className="space-y-4">
+                  {/* API Key */}
+                  {applicationSettings.authenticationMethod === 'api_key' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">API Key Configuration</h5>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">API Key</label>
+                        <input
+                          type="password"
+                          value={environmentSettings.credentials?.apiKey || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, apiKey: e.target.value }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Enter API key"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bearer Token */}
+                  {applicationSettings.authenticationMethod === 'bearer_token' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Bearer Token Configuration</h5>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bearer Token</label>
+                        <input
+                          type="password"
+                          value={environmentSettings.credentials?.bearerToken || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, bearerToken: e.target.value }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Enter bearer token"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Basic Authentication */}
+                  {applicationSettings.authenticationMethod === 'basic_auth' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Basic Authentication</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Username</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.username || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, username: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter username"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Password</label>
+                          <input
+                            type="password"
+                            value={environmentSettings.credentials?.password || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, password: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter password"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* OAuth 2.0 */}
+                  {applicationSettings.authenticationMethod === 'oauth2' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">OAuth 2.0 Configuration</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Client ID</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.clientId || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, clientId: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter client ID"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Client Secret</label>
+                          <input
+                            type="password"
+                            value={environmentSettings.credentials?.clientSecret || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, clientSecret: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter client secret"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Token URL</label>
+                          <input
+                            type="url"
+                            value={environmentSettings.credentials?.tokenUrl || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, tokenUrl: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="https://oauth.example.com/token"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Scope</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.scope || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, scope: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="read write"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* JWT Token */}
+                  {applicationSettings.authenticationMethod === 'jwt' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">JWT Token Configuration</h5>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">JWT Token</label>
+                        <textarea
+                          value={environmentSettings.credentials?.jwtToken || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, jwtToken: e.target.value }
+                          }))}
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Enter JWT token"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Azure Subscription */}
+                  {applicationSettings.authenticationMethod === 'azure_subscription' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Azure Subscription Configuration</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subscription ID</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.subscriptionId || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, subscriptionId: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter subscription ID"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Resource Group</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.resourceGroup || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, resourceGroup: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter resource group"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tenant ID</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.tenantId || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, tenantId: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter tenant ID"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Client ID</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.clientId || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, clientId: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter client ID"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Azure APIM */}
+                  {applicationSettings.authenticationMethod === 'azure_apim' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Azure APIM Configuration</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subscription Key</label>
+                          <input
+                            type="password"
+                            value={environmentSettings.credentials?.subscriptionKey || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, subscriptionKey: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter subscription key"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">APIM Instance URL</label>
+                          <input
+                            type="url"
+                            value={environmentSettings.credentials?.apimUrl || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, apimUrl: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="https://your-apim.azure-api.net"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AWS IAM */}
+                  {applicationSettings.authenticationMethod === 'aws_iam' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">AWS IAM Configuration</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Access Key ID</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.accessKeyId || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, accessKeyId: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter access key ID"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Secret Access Key</label>
+                          <input
+                            type="password"
+                            value={environmentSettings.credentials?.secretAccessKey || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, secretAccessKey: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter secret access key"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Region</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.region || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, region: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="us-east-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Session Token (optional)</label>
+                          <input
+                            type="password"
+                            value={environmentSettings.credentials?.sessionToken || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, sessionToken: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter session token"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* GCP Service Account */}
+                  {applicationSettings.authenticationMethod === 'gcp_service_account' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">GCP Service Account Configuration</h5>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Service Account JSON</label>
+                        <textarea
+                          value={environmentSettings.credentials?.serviceAccountJson || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, serviceAccountJson: e.target.value }
+                          }))}
+                          rows={6}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Paste service account JSON here..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Project ID</label>
+                        <input
+                          type="text"
+                          value={environmentSettings.credentials?.projectId || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, projectId: e.target.value }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Enter project ID"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Signature Authentication */}
+                  {applicationSettings.authenticationMethod === 'signature_auth' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Signature Authentication Configuration</h5>
+                      
+                      {/* Basic signature fields */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Private Key</label>
+                          <textarea
+                            value={environmentSettings.credentials?.privateKey || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, privateKey: e.target.value }
+                            }))}
+                            rows={4}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Enter private key"
+                          />
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Key Version</label>
+                            <input
+                              type="text"
+                              value={environmentSettings.credentials?.keyVersion || ''}
+                              onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { ...prev.credentials, keyVersion: e.target.value }
+                              }))}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                              placeholder="v1"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Unique Identifier</label>
+                            <input
+                              type="text"
+                              value={environmentSettings.credentials?.uniqueIdentifier || ''}
+                              onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { ...prev.credentials, uniqueIdentifier: e.target.value }
+                              }))}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                              placeholder="Enter unique identifier"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Signature Algorithm */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Signature Algorithm</label>
+                          <select
+                            value={environmentSettings.credentials?.signatureAlgorithm || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, signatureAlgorithm: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value="">Select algorithm</option>
+                            <option value="HMAC-SHA256">HMAC-SHA256</option>
+                            <option value="HMAC-SHA1">HMAC-SHA1</option>
+                            <option value="RSA-SHA256">RSA-SHA256</option>
+                            <option value="ECDSA-SHA256">ECDSA-SHA256</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Signature Header</label>
+                          <input
+                            type="text"
+                            value={environmentSettings.credentials?.signatureHeader || ''}
+                            onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                              ...prev, 
+                              credentials: { ...prev.credentials, signatureHeader: e.target.value }
+                            }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Authorization"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Dynamic Fields Selection */}
+                      <div className="space-y-3">
+                        <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300">Include Dynamic Fields in Signature</h6>
+                        
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              id="noDynamicFields"
+                              name="dynamicFields"
+                              value="none"
+                              checked={!environmentSettings.credentials?.includeDynamicFields}
+                              onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { 
+                                  ...prev.credentials, 
+                                  includeDynamicFields: false,
+                                  dynamicFieldsConfig: {}
+                                }
+                              }))}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                            />
+                            <label htmlFor="noDynamicFields" className="text-sm text-gray-700 dark:text-gray-300">
+                              No dynamic fields
+                            </label>
+                          </div>
+                          
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              id="includeDynamicFields"
+                              name="dynamicFields"
+                              value="include"
+                              checked={environmentSettings.credentials?.includeDynamicFields === true}
+                              onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { 
+                                  ...prev.credentials, 
+                                  includeDynamicFields: true,
+                                  dynamicFieldsConfig: prev.credentials?.dynamicFieldsConfig || {}
+                                }
+                              }))}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                            />
+                            <label htmlFor="includeDynamicFields" className="text-sm text-gray-700 dark:text-gray-300">
+                              Include dynamic fields
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Dynamic Fields Configuration */}
+                        {environmentSettings.credentials?.includeDynamicFields && (
+                          <div className="ml-6 space-y-3 border-l-2 border-blue-200 dark:border-blue-700 pl-4">
+                            <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Dynamic Fields:</h6>
+                            
+                            <div className="space-y-2">
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="timestamp"
+                                  checked={environmentSettings.credentials?.dynamicFieldsConfig?.timestamp === true}
+                                  onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                    ...prev, 
+                                    credentials: { 
+                                      ...prev.credentials, 
+                                      dynamicFieldsConfig: {
+                                        ...prev.credentials?.dynamicFieldsConfig,
+                                        timestamp: e.target.checked
+                                      }
+                                    }
+                                  }))}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="timestamp" className="text-sm text-gray-700 dark:text-gray-300">
+                                  Timestamp <span className="text-gray-500">(Current Unix timestamp)</span>
+                                </label>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="nonce"
+                                  checked={environmentSettings.credentials?.dynamicFieldsConfig?.nonce === true}
+                                  onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                    ...prev, 
+                                    credentials: { 
+                                      ...prev.credentials, 
+                                      dynamicFieldsConfig: {
+                                        ...prev.credentials?.dynamicFieldsConfig,
+                                        nonce: e.target.checked
+                                      }
+                                    }
+                                  }))}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="nonce" className="text-sm text-gray-700 dark:text-gray-300">
+                                  Nonce <span className="text-gray-500">(Random UUID for replay protection)</span>
+                                </label>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="httpMethod"
+                                  checked={environmentSettings.credentials?.dynamicFieldsConfig?.httpMethod === true}
+                                  onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                    ...prev, 
+                                    credentials: { 
+                                      ...prev.credentials, 
+                                      dynamicFieldsConfig: {
+                                        ...prev.credentials?.dynamicFieldsConfig,
+                                        httpMethod: e.target.checked
+                                      }
+                                    }
+                                  }))}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="httpMethod" className="text-sm text-gray-700 dark:text-gray-300">
+                                  HTTP Method <span className="text-gray-500">(GET, POST, PUT, etc.)</span>
+                                </label>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="requestUri"
+                                  checked={environmentSettings.credentials?.dynamicFieldsConfig?.requestUri === true}
+                                  onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                    ...prev, 
+                                    credentials: { 
+                                      ...prev.credentials, 
+                                      dynamicFieldsConfig: {
+                                        ...prev.credentials?.dynamicFieldsConfig,
+                                        requestUri: e.target.checked
+                                      }
+                                    }
+                                  }))}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="requestUri" className="text-sm text-gray-700 dark:text-gray-300">
+                                  Request URI <span className="text-gray-500">(Path and query parameters)</span>
+                                </label>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="bodyHash"
+                                  checked={environmentSettings.credentials?.dynamicFieldsConfig?.bodyHash === true}
+                                  onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                    ...prev, 
+                                    credentials: { 
+                                      ...prev.credentials, 
+                                      dynamicFieldsConfig: {
+                                        ...prev.credentials?.dynamicFieldsConfig,
+                                        bodyHash: e.target.checked
+                                      }
+                                    }
+                                  }))}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="bodyHash" className="text-sm text-gray-700 dark:text-gray-300">
+                                  Body Hash <span className="text-gray-500">(SHA256 hash of request body)</span>
+                                </label>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id="customFields"
+                                  checked={environmentSettings.credentials?.dynamicFieldsConfig?.customFields === true}
+                                  onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                                    ...prev, 
+                                    credentials: { 
+                                      ...prev.credentials, 
+                                      dynamicFieldsConfig: {
+                                        ...prev.credentials?.dynamicFieldsConfig,
+                                        customFields: e.target.checked
+                                      }
+                                    }
+                                  }))}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <label htmlFor="customFields" className="text-sm text-gray-700 dark:text-gray-300">
+                                  Custom Fields <span className="text-gray-500">(User-defined custom fields)</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            {/* Custom Fields Input */}
+                            {environmentSettings.credentials?.dynamicFieldsConfig?.customFields && (
+                              <div className="ml-6 space-y-2">
+                                <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300">Custom Fields:</h6>
+                                <div className="space-y-2">
+                                  {(environmentSettings.credentials?.customDynamicFields || []).map((field: any, index: number) => (
+                                    <div key={index} className="flex gap-2">
+                                      <input
+                                        type="text"
+                                        value={field.name || ''}
+                                        onChange={(e) => {
+                                          const newFields = [...(environmentSettings.credentials?.customDynamicFields || [])]
+                                          newFields[index] = { ...newFields[index], name: e.target.value }
+                                          setEnvironmentSettings((prev: any) => ({ 
+                                            ...prev, 
+                                            credentials: { ...prev.credentials, customDynamicFields: newFields }
+                                          }))
+                                        }}
+                                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                        placeholder="Field name"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={field.value || ''}
+                                        onChange={(e) => {
+                                          const newFields = [...(environmentSettings.credentials?.customDynamicFields || [])]
+                                          newFields[index] = { ...newFields[index], value: e.target.value }
+                                          setEnvironmentSettings((prev: any) => ({ 
+                                            ...prev, 
+                                            credentials: { ...prev.credentials, customDynamicFields: newFields }
+                                          }))
+                                        }}
+                                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                        placeholder="Field value or pattern"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newFields = (environmentSettings.credentials?.customDynamicFields || []).filter((_: any, i: number) => i !== index)
+                                          setEnvironmentSettings((prev: any) => ({ 
+                                            ...prev, 
+                                            credentials: { ...prev.credentials, customDynamicFields: newFields }
+                                          }))
+                                        }}
+                                        className="px-3 py-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newFields = [...(environmentSettings.credentials?.customDynamicFields || []), { name: '', value: '' }]
+                                      setEnvironmentSettings((prev: any) => ({ 
+                                        ...prev, 
+                                        credentials: { ...prev.credentials, customDynamicFields: newFields }
+                                      }))
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm"
+                                  >
+                                    + Add Custom Field
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Signature Format */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Signature Format</label>
+                        <input
+                          type="text"
+                          value={environmentSettings.credentials?.signatureFormat || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, signatureFormat: e.target.value }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Signature keyId='{uniqueIdentifier}',algorithm='{algorithm}',signature='{signature}'"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Authentication */}
+                  {applicationSettings.authenticationMethod === 'custom' && (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Custom Authentication Configuration</h5>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom Authentication Script</label>
+                        <textarea
+                          value={environmentSettings.credentials?.customScript || ''}
+                          onChange={(e) => setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, customScript: e.target.value }
+                          }))}
+                          rows={8}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                          placeholder="Enter custom authentication script or logic..."
+                        />
+                      </div>
+                      <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md">
+                        <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                          <strong>Note:</strong> Custom authentication allows you to implement any authentication logic. 
+                          Use this for proprietary or complex authentication schemes.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Headers - Available for all authentication methods */}
+                  <div className="space-y-3">
+                    <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Custom Headers</h5>
+                    <div className="space-y-2">
+                      {(environmentSettings.credentials?.customHeaders || []).map((header: any, index: number) => (
+                        <div key={index} className="flex gap-2">
+                          <input
+                            type="text"
+                            value={header.name || ''}
+                            onChange={(e) => {
+                              const newHeaders = [...(environmentSettings.credentials?.customHeaders || [])]
+                              newHeaders[index] = { ...newHeaders[index], name: e.target.value }
+                              setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { ...prev.credentials, customHeaders: newHeaders }
+                              }))
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Header name"
+                          />
+                          <input
+                            type="text"
+                            value={header.value || ''}
+                            onChange={(e) => {
+                              const newHeaders = [...(environmentSettings.credentials?.customHeaders || [])]
+                              newHeaders[index] = { ...newHeaders[index], value: e.target.value }
+                              setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { ...prev.credentials, customHeaders: newHeaders }
+                              }))
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            placeholder="Header value"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newHeaders = (environmentSettings.credentials?.customHeaders || []).filter((_: any, i: number) => i !== index)
+                              setEnvironmentSettings((prev: any) => ({ 
+                                ...prev, 
+                                credentials: { ...prev.credentials, customHeaders: newHeaders }
+                              }))
+                            }}
+                            className="px-3 py-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newHeaders = [...(environmentSettings.credentials?.customHeaders || []), { name: '', value: '' }]
+                          setEnvironmentSettings((prev: any) => ({ 
+                            ...prev, 
+                            credentials: { ...prev.credentials, customHeaders: newHeaders }
+                          }))
+                        }}
+                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm"
+                      >
+                        + Add Custom Header
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Show note about where credentials are stored */}
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      <strong>Note:</strong> These credentials will be securely stored in your configured vault.
+                      Only a reference to the vault entry will be stored in the database, not the actual credentials.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Rate Limiting Settings */}
             <div className="space-y-4">
               <div className="flex items-center space-x-3">
@@ -888,9 +1045,10 @@ export default function SettingsSection({
             <div className="flex justify-end">
               <button
                 onClick={handleSaveSettings}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
+                disabled={loading}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 disabled:opacity-50"
               >
-                Save Environment Settings
+                {loading ? 'Saving...' : 'Save Environment Settings'}
               </button>
             </div>
           </div>

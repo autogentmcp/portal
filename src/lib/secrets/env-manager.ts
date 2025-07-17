@@ -79,6 +79,27 @@ export class EnvSecretManager {
   }
 
   /**
+   * Store credentials object in the configured provider with proper encoding
+   * @param key The key to store
+   * @param credentials The credentials object
+   * @returns Promise resolving to boolean indicating success
+   */
+  public async storeCredentials(key: string, credentials: Record<string, any>): Promise<boolean> {
+    try {
+      if (!this.provider) {
+        logError('No secret provider available for storing credentials');
+        return false;
+      }
+
+      logInfo(`Storing credentials: ${key}`);
+      return await this.provider.storeCredentials(key, credentials);
+    } catch (error) {
+      logError(`Failed to store credentials: ${key}`, error);
+      return false;
+    }
+  }
+
+  /**
    * Retrieve a security setting from the configured provider
    * @param key The key to retrieve
    * @returns Promise resolving to the value or null if not found
@@ -94,6 +115,26 @@ export class EnvSecretManager {
       return await this.provider.getSecret(key);
     } catch (error) {
       logError(`Failed to retrieve security setting: ${key}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Retrieve credentials object from the configured provider with proper decoding
+   * @param key The key to retrieve
+   * @returns Promise resolving to the credentials object or null if not found
+   */
+  public async getCredentials(key: string): Promise<Record<string, any> | null> {
+    try {
+      if (!this.provider) {
+        logError('No secret provider available for retrieving credentials');
+        return null;
+      }
+
+      logInfo(`Retrieving credentials: ${key}`);
+      return await this.provider.getCredentials(key);
+    } catch (error) {
+      logError(`Failed to retrieve credentials: ${key}`, error);
       return null;
     }
   }

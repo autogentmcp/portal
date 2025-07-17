@@ -25,6 +25,21 @@ export interface SecretProvider {
   deleteSecret(key: string): Promise<boolean>;
 
   /**
+   * Store credentials object in the vault with proper encoding for sensitive fields
+   * @param key The key to store the credentials under
+   * @param credentials The credentials object
+   * @returns Promise resolving to boolean indicating success
+   */
+  storeCredentials(key: string, credentials: Record<string, any>): Promise<boolean>;
+
+  /**
+   * Retrieve credentials object from the vault with proper decoding for sensitive fields
+   * @param key The key to retrieve
+   * @returns Promise resolving to the credentials object or null if not found
+   */
+  getCredentials(key: string): Promise<Record<string, any> | null>;
+
+  /**
    * Test the connection to the vault
    * @returns Promise resolving to boolean indicating success
    */

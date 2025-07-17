@@ -1,6 +1,6 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 import { SecretProvider, GCPSecretManagerConfig } from './types';
-import { logError, logInfo } from '@/lib/utils/logger';
+import { logError, logInfo } from '../utils/logger';
 
 /**
  * Google Cloud Secret Manager implementation of SecretProvider using the official SDK
@@ -150,6 +150,40 @@ export class GCPSecretManagerProvider implements SecretProvider {
     } catch (error) {
       logError('Error connecting to GCP Secret Manager', error);
       return false;
+    }
+  }
+
+  /**
+   * Store credentials object in GCP Secret Manager with proper encoding for sensitive fields
+   * @param key The key to store the credentials under
+   * @param credentials The credentials object
+   * @returns Promise resolving to boolean indicating success
+   */
+  async storeCredentials(key: string, credentials: Record<string, any>): Promise<boolean> {
+    try {
+      const credentialsJson = JSON.stringify(credentials);
+      return await this.storeSecret(key, credentialsJson);
+    } catch (error) {
+      logError('Error storing credentials in GCP Secret Manager', error);
+      return false;
+    }
+  }
+
+  /**
+   * Retrieve credentials object from GCP Secret Manager with proper decoding for sensitive fields
+   * @param key The key to retrieve
+   * @returns Promise resolving to the credentials object or null if not found
+   */
+  async getCredentials(key: string): Promise<Record<string, any> | null> {
+    try {
+      const credentialsJson = await this.getSecret(key);
+      if (!credentialsJson) {
+        return null;
+      }
+      return JSON.parse(credentialsJson);
+    } catch (error) {
+      logError('Error retrieving credentials from GCP Secret Manager', error);
+      return null;
     }
   }
 

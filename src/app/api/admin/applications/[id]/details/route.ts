@@ -60,6 +60,12 @@ export async function GET(
             createdAt: 'desc',
           },
         },
+        healthCheckLogs: {
+          take: 10, // Limit to latest 10 logs
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
       },
     })
 

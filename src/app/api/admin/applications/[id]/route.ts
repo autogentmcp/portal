@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
 import { deleteApiKey } from '@/lib/api-keys'
+import { EnvSecretManager } from '@/lib/secrets/env-manager'
 
 // PUT /api/admin/applications/[id] - Update application
 export async function PUT(
@@ -86,6 +87,40 @@ export async function DELETE(
     await prisma.endpoint.deleteMany({
       where: { applicationId: id },
     })
+
+    // Get all environments for this application to clean up vault keys
+    const environments = await prisma.environment.findMany({
+      where: { applicationId: id },
+      include: {
+        security: true,
+      },
+    })
+
+    // Clean up vault keys for each environment
+    let secretManager: EnvSecretManager | null = null
+    try {
+      secretManager = new EnvSecretManager()
+      await secretManager.init()
+      
+      if (secretManager.hasProvider()) {
+        for (const env of environments) {
+          // @ts-ignore - vaultKey field added in recent migration
+          if (env.security?.vaultKey) {
+            try {
+              // @ts-ignore - vaultKey field added in recent migration
+              await secretManager.deleteSecuritySetting(env.security.vaultKey)
+              // @ts-ignore - vaultKey field added in recent migration
+              console.log(`Deleted vault key ${env.security.vaultKey} for environment ${env.id}`)
+            } catch (error) {
+              // @ts-ignore - vaultKey field added in recent migration
+              console.error(`Failed to delete vault key ${env.security.vaultKey}:`, error)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Could not initialize secret manager for cleanup:', error)
+    }
 
     await prisma.environment.deleteMany({
       where: { applicationId: id },

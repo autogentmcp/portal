@@ -13,7 +13,7 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { name, status = 'ACTIVE' } = await request.json()
+    const { name, status = 'ACTIVE', baseDomain } = await request.json()
 
     // In Next.js 14+, we need to await params before accessing its properties
     const { id } = await params
@@ -21,6 +21,13 @@ export async function POST(
     if (!name) {
       return NextResponse.json(
         { error: 'Environment name is required' },
+        { status: 400 }
+      )
+    }
+    
+    if (!baseDomain) {
+      return NextResponse.json(
+        { error: 'Base domain is required' },
         { status: 400 }
       )
     }
@@ -53,6 +60,7 @@ export async function POST(
       data: {
         name: name.toLowerCase(),
         status,
+        baseDomain,
         applicationId: id,
       },
       include: {

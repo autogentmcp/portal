@@ -45,61 +45,56 @@ export async function PUT(
     console.log(`Environment security update for ${environmentId}`)
     console.log(`Vault available: ${vaultAvailable}`)
 
-    // Identify sensitive fields that should be stored in the vault
-    const sensitiveFields = [
-      'azureApimSubscriptionKey',
-      'awsSecretKey', 
-      'awsSessionToken',
-      'gcpKeyFile',
-      'oauth2ClientSecret',
-      'jwtSecret',
-      'signaturePrivateKey',
-      'apiKey',
-      'bearerToken',
-      'basicAuthPassword'
-    ]
+    // Extract credentials data for vault storage and non-sensitive config for database
+    const credentialsData: Record<string, any> = {}
+    const configData: Record<string, any> = {}
 
-    // Extract sensitive data for vault storage
-    const sensitiveData: Record<string, any> = {}
-    const nonSensitiveData: Record<string, any> = {}
+    // Handle nested credentials structure - ALL credentials go to vault
+    if (body.credentials && typeof body.credentials === 'object') {
+      // All credentials are considered sensitive and go to vault
+      Object.keys(body.credentials).forEach(key => {
+        if (body.credentials[key] !== undefined && body.credentials[key] !== null && body.credentials[key] !== '') {
+          credentialsData[key] = body.credentials[key]
+          console.log(`Found credential field for vault: ${key}`)
+        }
+      })
+    }
 
-    // Separate sensitive and non-sensitive data
+    // Non-credentials data goes to database (rate limiting, etc.)
     Object.keys(body).forEach(key => {
-      if (sensitiveFields.includes(key) && body[key]) {
-        sensitiveData[key] = body[key]
-        console.log(`Found sensitive field: ${key}`)
-      } else {
-        nonSensitiveData[key] = body[key]
-      }
+      if (key === 'credentials') return // Skip credentials object, already processed
+      
+      configData[key] = body[key]
     })
 
-    console.log(`Sensitive data keys: ${Object.keys(sensitiveData).join(', ')}`)
-    console.log(`Non-sensitive data keys: ${Object.keys(nonSensitiveData).join(', ')}`)
+    console.log(`Credentials data keys: ${Object.keys(credentialsData).join(', ')}`)
+    console.log(`Config data keys: ${Object.keys(configData).join(', ')}`)
 
-    // Store sensitive data in the vault if available
-    if (vaultAvailable && secretManager && Object.keys(sensitiveData).length > 0) {
+    // Store credentials data in the vault if available
+    if (vaultAvailable && secretManager && Object.keys(credentialsData).length > 0) {
       try {
         const vaultKey = `env_${environmentId}_security_settings`
-        const success = await secretManager.storeSecuritySetting(vaultKey, JSON.stringify(sensitiveData))
+        const success = await secretManager.storeCredentials(vaultKey, credentialsData)
         
         if (success) {
-          console.log(`Stored sensitive environment security settings in vault for environment ${environmentId}`)
+          console.log(`Stored credentials in vault for environment ${environmentId}`)
         } else {
-          console.warn('Failed to store sensitive data in vault')
+          console.warn('Failed to store credentials in vault')
         }
       } catch (error) {
-        console.error('Error storing sensitive data in vault:', error instanceof Error ? error.message : String(error))
+        console.error('Error storing credentials in vault:', error instanceof Error ? error.message : String(error))
       }
-    } else if (Object.keys(sensitiveData).length > 0) {
-      console.warn(`Vault not available, sensitive data will be stored in database (not recommended)`)
+    } else if (Object.keys(credentialsData).length > 0) {
+      console.warn(`Vault not available, credentials will be stored in database (not recommended)`)
     }
 
     // Update or create environment security settings
-    // Only store rate limiting fields in the database (sensitive data goes to vault)
+    // Only store rate limiting and basic configuration in the database
     const securityData = {
-      rateLimitEnabled: nonSensitiveData.rateLimitEnabled || false,
-      rateLimitRequests: nonSensitiveData.rateLimitRequests || null,
-      rateLimitWindow: nonSensitiveData.rateLimitWindow || null,
+      rateLimitEnabled: configData.rateLimitEnabled || false,
+      rateLimitRequests: configData.rateLimitRequests || null,
+      rateLimitWindow: configData.rateLimitWindow || null,
+      vaultKey: vaultAvailable && Object.keys(credentialsData).length > 0 ? `env_${environmentId}_security_settings` : null,
     }
 
     // @ts-ignore - TypeScript might not recognize the model due to dynamic schema loading
@@ -162,21 +157,22 @@ export async function GET(
     }
 
     // Create a response object starting with database data
-    const response = { ...environmentSecurity }
+    const response: Record<string, any> = { ...environmentSecurity }
 
     // If vault is available, try to retrieve sensitive data
     if (vaultAvailable && secretManager) {
       try {
         const vaultKey = `env_${environmentId}_security_settings`
-        const sensitiveDataJson = await secretManager.getSecuritySetting(vaultKey)
+        const sensitiveData = await secretManager.getCredentials(vaultKey)
         
-        if (sensitiveDataJson) {
-          const sensitiveData = JSON.parse(sensitiveDataJson)
+        if (sensitiveData) {
+          // Create a credentials object to hold sensitive data
+          response.credentials = response.credentials || {}
           
-          // Merge sensitive data back into the response
+          // Merge sensitive data into credentials object
           Object.keys(sensitiveData).forEach(key => {
             if (sensitiveData[key]) {
-              response[key] = sensitiveData[key]
+              response.credentials[key] = sensitiveData[key]
             }
           })
           
@@ -186,6 +182,49 @@ export async function GET(
         console.error('Error retrieving sensitive data from vault:', error instanceof Error ? error.message : String(error))
         // Continue with non-sensitive data only
       }
+    }
+
+    // Parse stored JSON fields back to objects
+    if (response.customHeaders) {
+      try {
+        response.credentials = response.credentials || {}
+        response.credentials.customHeaders = JSON.parse(response.customHeaders)
+      } catch (error) {
+        console.error('Error parsing customHeaders:', error)
+      }
+    }
+
+    if (response.dynamicFieldsConfig) {
+      try {
+        response.credentials = response.credentials || {}
+        response.credentials.dynamicFieldsConfig = JSON.parse(response.dynamicFieldsConfig)
+      } catch (error) {
+        console.error('Error parsing dynamicFieldsConfig:', error)
+      }
+    }
+
+    if (response.customDynamicFields) {
+      try {
+        response.credentials = response.credentials || {}
+        response.credentials.customDynamicFields = JSON.parse(response.customDynamicFields)
+      } catch (error) {
+        console.error('Error parsing customDynamicFields:', error)
+      }
+    }
+
+    // Move other non-sensitive fields to credentials object for consistency
+    if (response.credentials) {
+      const fieldsToMove = [
+        'keyVersion', 'uniqueIdentifier', 'signatureAlgorithm', 'signatureHeader', 
+        'signatureFormat', 'includeDynamicFields', 'tokenUrl', 'scope', 
+        'subscriptionId', 'resourceGroup', 'region', 'projectId', 'apimUrl', 'username'
+      ]
+      
+      fieldsToMove.forEach(field => {
+        if (response[field] !== undefined) {
+          response.credentials[field] = response[field]
+        }
+      })
     }
 
     return NextResponse.json(response)
