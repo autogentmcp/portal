@@ -73,7 +73,7 @@ export async function POST(
 
     return NextResponse.json(apiKeyResponse, { status: 201 })
   } catch (error) {
-    console.error('Error creating API key:', error)
+    console.error('Error creating API key')
     return NextResponse.json(
       { error: 'Failed to create API key' },
       { status: 500 }

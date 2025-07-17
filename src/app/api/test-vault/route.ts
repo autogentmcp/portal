@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       if (storeResult) {
         console.log('Testing secret retrieval...')
         const retrieveResult = await secretManager.getSecuritySetting(testKey)
-        console.log('Retrieved value:', retrieveResult)
+        console.log('Retrieved value successfully:', retrieveResult === testValue)
         
         if (retrieveResult === testValue) {
           console.log('✅ Vault storage and retrieval working correctly!')
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       })
     }
   } catch (error) {
-    console.error('❌ Error testing vault connection:', error)
+    console.error('❌ Error testing vault connection')
     return NextResponse.json({ 
       success: false, 
       message: 'Error testing vault connection',

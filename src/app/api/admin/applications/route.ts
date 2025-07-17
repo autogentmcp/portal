@@ -93,38 +93,8 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Create default environments without base domains
-    // Admin will need to set base domains later
-    const environments = ['development', 'staging', 'production']
-    await Promise.all(
-      environments.map(env =>
-        prisma.environment.create({
-          data: {
-            name: env,
-            applicationId: application.id,
-          },
-        })
-      )
-    )
-
-    // Create default API keys for each environment
-    const createdEnvironments = await prisma.environment.findMany({
-      where: { applicationId: application.id },
-    })
-
-    await Promise.all(
-      createdEnvironments.map(env =>
-        prisma.apiKey.create({
-          data: {
-            name: `${env.name}-key`,
-            token: generateApiToken(),
-            environmentId: env.id,
-            applicationId: application.id,
-            userId: user.id,
-          },
-        })
-      )
-    )
+    // No longer creating default environments or API keys
+    // The admin will need to create environments manually
 
     return NextResponse.json(application, { status: 201 })
   } catch (error) {

@@ -36,14 +36,11 @@ export async function PUT(
       secretManager = new EnvSecretManager()
       await secretManager.init()
       vaultAvailable = secretManager.hasProvider()
-      console.log(`Secret manager initialized successfully, has provider: ${vaultAvailable}`)
     } catch (error) {
-      console.warn('Failed to initialize secret manager, proceeding without vault:', error instanceof Error ? error.message : String(error))
+      // Log without exposing sensitive details
+      console.warn('Failed to initialize secret manager, proceeding without vault')
       vaultAvailable = false
     }
-
-    console.log(`Environment security update for ${environmentId}`)
-    console.log(`Vault available: ${vaultAvailable}`)
 
     // Extract credentials data for vault storage and non-sensitive config for database
     const credentialsData: Record<string, any> = {}
@@ -55,7 +52,6 @@ export async function PUT(
       Object.keys(body.credentials).forEach(key => {
         if (body.credentials[key] !== undefined && body.credentials[key] !== null && body.credentials[key] !== '') {
           credentialsData[key] = body.credentials[key]
-          console.log(`Found credential field for vault: ${key}`)
         }
       })
     }
@@ -67,25 +63,17 @@ export async function PUT(
       configData[key] = body[key]
     })
 
-    console.log(`Credentials data keys: ${Object.keys(credentialsData).join(', ')}`)
-    console.log(`Config data keys: ${Object.keys(configData).join(', ')}`)
-
     // Store credentials data in the vault if available
     if (vaultAvailable && secretManager && Object.keys(credentialsData).length > 0) {
       try {
         const vaultKey = `env_${environmentId}_security_settings`
-        const success = await secretManager.storeCredentials(vaultKey, credentialsData)
-        
-        if (success) {
-          console.log(`Stored credentials in vault for environment ${environmentId}`)
-        } else {
-          console.warn('Failed to store credentials in vault')
-        }
+        await secretManager.storeCredentials(vaultKey, credentialsData)
       } catch (error) {
-        console.error('Error storing credentials in vault:', error instanceof Error ? error.message : String(error))
+        // Log error without sensitive details
+        console.error('Error storing credentials in vault')
       }
     } else if (Object.keys(credentialsData).length > 0) {
-      console.warn(`Vault not available, credentials will be stored in database (not recommended)`)
+      console.warn('Vault not available, credentials will be stored in database (not recommended)')
     }
 
     // Update or create environment security settings
@@ -150,9 +138,8 @@ export async function GET(
       secretManager = new EnvSecretManager()
       await secretManager.init()
       vaultAvailable = secretManager.hasProvider()
-      console.log(`Secret manager initialized for GET, has provider: ${vaultAvailable}`)
     } catch (error) {
-      console.warn('Failed to initialize secret manager for GET, proceeding without vault:', error instanceof Error ? error.message : String(error))
+      console.warn('Failed to initialize secret manager for GET, proceeding without vault')
       vaultAvailable = false
     }
 
@@ -175,11 +162,9 @@ export async function GET(
               response.credentials[key] = sensitiveData[key]
             }
           })
-          
-          console.log(`Retrieved sensitive environment security settings from vault for environment ${environmentId}`)
         }
       } catch (error) {
-        console.error('Error retrieving sensitive data from vault:', error instanceof Error ? error.message : String(error))
+        console.error('Error retrieving sensitive data from vault')
         // Continue with non-sensitive data only
       }
     }

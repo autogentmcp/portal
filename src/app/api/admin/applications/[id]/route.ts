@@ -110,10 +110,10 @@ export async function DELETE(
               // @ts-ignore - vaultKey field added in recent migration
               await secretManager.deleteSecuritySetting(env.security.vaultKey)
               // @ts-ignore - vaultKey field added in recent migration
-              console.log(`Deleted vault key ${env.security.vaultKey} for environment ${env.id}`)
+              console.log(`Deleted vault key for environment ${env.id}`)
             } catch (error) {
               // @ts-ignore - vaultKey field added in recent migration
-              console.error(`Failed to delete vault key ${env.security.vaultKey}:`, error)
+              console.error(`Failed to delete vault key for environment ${env.id}`)
             }
           }
         }

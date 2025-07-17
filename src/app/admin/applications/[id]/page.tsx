@@ -321,6 +321,7 @@ export default function ApplicationDetailPage() {
   const [selectedEnvironment, setSelectedEnvironment] = useState<string>('')
   const [activeEnvironment, setActiveEnvironment] = useState<string | null>(null)
   const [environmentSettings, setEnvironmentSettings] = useState<Record<string, any>>({})
+  const [plaintextApiKeys, setPlaintextApiKeys] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchApplicationDetails()
@@ -386,6 +387,11 @@ export default function ApplicationDetailPage() {
       if (response.ok) {
         const data = await response.json()
         setApplication(data)
+        
+        // Once we have the application data with API keys, fetch their plaintext versions
+        if (data.apiKeys && data.apiKeys.length > 0) {
+          fetchPlaintextApiKeys(data)
+        }
       } else {
         router.push('/admin/dashboard')
       }
@@ -395,6 +401,37 @@ export default function ApplicationDetailPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+  
+  const fetchPlaintextApiKeys = async (app = application) => {
+    if (!app) return
+    
+    console.log('Fetching plaintext API keys from vault')
+    const keys: Record<string, string> = {}
+    
+    // Fetch each API key from the vault
+    for (const key of app.apiKeys) {
+      try {
+        console.log(`Fetching plaintext key for API key ID: ${key.id}`)
+        const response = await fetch(`/api/admin/applications/${params.id}/api-keys/${key.id}/plaintext`, {
+          credentials: 'include'
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`Retrieved plaintext key for API key ID: ${key.id}`)
+          keys[key.id] = data.plaintextKey
+        } else {
+          const errorData = await response.json()
+          console.error(`Failed to fetch plaintext key: ${errorData.error || 'Unknown error'}`)
+        }
+      } catch (error) {
+        console.error(`Error fetching plaintext API key for ID ${key.id}:`, error)
+      }
+    }
+    
+    console.log(`Retrieved ${Object.keys(keys).length} plaintext keys from vault`)
+    setPlaintextApiKeys(keys)
   }
   
   const updateEnvironmentDomain = async (environmentId: string, baseDomain: string) => {
@@ -522,6 +559,20 @@ export default function ApplicationDetailPage() {
       })
 
       if (response.ok) {
+        const data = await response.json()
+        
+        // For newly created keys, we get the plaintext key directly in the response
+        // So we can add it to our state without another API call
+        if (data.plaintextToken) {
+          setPlaintextApiKeys(prev => ({
+            ...prev,
+            [data.id]: data.plaintextToken
+          }))
+          
+          // Show the key to the user
+          alert(`New API key created: ${data.plaintextToken}\n\nThis key will only be shown once. Make sure to copy it now.`);
+        }
+        
         await fetchApplicationDetails()
         setShowCreateApiKey(false)
       }
@@ -939,8 +990,31 @@ export default function ApplicationDetailPage() {
                     <tr key={key.id}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{key.name}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400 font-mono">
-                          {key.token.substring(0, 20)}...
+                        <div className="flex items-center">
+                          <div className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+                            {/* Show plaintext key from vault if available, otherwise show truncated hashed key */}
+                            {plaintextApiKeys[key.id] 
+                              ? `${plaintextApiKeys[key.id].substring(0, 30)}...`
+                              : `${key.token.substring(0, 12)}... (hashed)`}
+                          </div>
+                          <button
+                            onClick={() => {
+                              // Copy plaintext key from vault if available, otherwise use hashed key
+                              if (plaintextApiKeys[key.id]) {
+                                navigator.clipboard.writeText(plaintextApiKeys[key.id]);
+                                alert('Original API key copied to clipboard');
+                              } else {
+                                navigator.clipboard.writeText(key.token);
+                                alert('Hashed API key copied to clipboard - original key not found in vault');
+                              }
+                            }}
+                            className="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                            title="Copy API key"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </button>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -959,11 +1033,31 @@ export default function ApplicationDetailPage() {
                         {key.lastUsed ? new Date(key.lastUsed).toLocaleDateString() : 'Never'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button 
-                          onClick={() => handleRevokeApiKey(key.id)}
-                          className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
-                          Revoke
-                        </button>
+                        <div className="flex items-center space-x-3">
+                          <button 
+                            onClick={() => {
+                              // Copy plaintext key from vault if available, otherwise use hashed key
+                              if (plaintextApiKeys[key.id]) {
+                                navigator.clipboard.writeText(plaintextApiKeys[key.id]);
+                                alert('Original API key copied to clipboard');
+                              } else {
+                                navigator.clipboard.writeText(key.token);
+                                alert('Hashed API key copied to clipboard - original key not found in vault');
+                              }
+                            }}
+                            className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                          </button>
+                          <button 
+                            onClick={() => handleRevokeApiKey(key.id)}
+                            className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
+                            Revoke
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

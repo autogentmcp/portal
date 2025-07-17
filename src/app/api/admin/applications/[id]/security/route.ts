@@ -51,7 +51,7 @@ export async function PUT(
           )
         }
       } catch (error) {
-        logError(`Failed to store credentials in vault: ${error}`)
+        logError(`Failed to store credentials in vault for application ${id}`)
         return NextResponse.json(
           { error: 'Failed to store credentials in vault' },
           { status: 500 }
@@ -130,13 +130,13 @@ export async function GET(
         }
       }
     } catch (error) {
-      logError(`Failed to retrieve credentials from vault: ${error}`)
+      logError(`Failed to retrieve credentials from vault for application ${id}`)
       // Continue without credentials - they'll be empty
     }
 
     return NextResponse.json(result)
   } catch (error) {
-    logError(`Error fetching application security settings: ${error}`)
+    logError(`Error fetching application security settings`)
     return NextResponse.json(
       { error: 'Failed to fetch application security settings' },
       { status: 500 }

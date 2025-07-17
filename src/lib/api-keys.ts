@@ -111,7 +111,7 @@ export async function createApiKey({
     }
   });
   
-  logInfo(`Created API key ${name} for application ${applicationId}`);
+  logInfo(`Created API key (name: ${name}, id: ${keyId}) for application ${applicationId}`);
   
   // Return the API key details including the plaintext key (only shown once)
   return {
@@ -153,6 +153,43 @@ export async function verifyApiKeyFromDatabase(apiKey: string) {
 }
 
 /**
+ * Get the plaintext API key from the vault
+ * @param applicationId The application ID the key belongs to
+ * @param keyId The ID of the API key to retrieve
+ * @returns The plaintext API key from vault, or null if not found
+ */
+export async function getPlaintextApiKey(applicationId: string, keyId: string): Promise<string | null> {
+  try {
+    // Construct the vault key using the same pattern as when storing
+    const vaultKey = `${API_KEY_VAULT_PREFIX}${applicationId}_${keyId}`;
+    
+    // Get the API key from the vault
+    const secretManager = SecretManager.getInstance();
+    // Make sure it's initialized
+    await secretManager.init();
+    
+    // Check if secret manager is available
+    if (!secretManager.hasProvider()) {
+      logError('No secret provider available for API key retrieval');
+      return null;
+    }
+    
+    // Get the API key from the vault
+    const apiKey = await secretManager.getSecuritySetting(vaultKey);
+    
+    if (!apiKey) {
+      logInfo(`API key not found in vault for application ${applicationId}, keyId ${keyId}`);
+      return null;
+    }
+    
+    return apiKey;
+  } catch (error) {
+    logError(`Error retrieving API key from vault for application ${applicationId}, keyId ${keyId}`);
+    return null;
+  }
+}
+
+/**
  * Delete an API key from both database and vault
  * @param keyId The ID of the API key to delete
  */
@@ -185,7 +222,7 @@ export async function deleteApiKey(keyId: string) {
     
     return true;
   } catch (error) {
-    logError(`Error deleting API key ${keyId}`, error);
+    logError(`Error deleting API key with ID ${keyId}`);
     throw error;
   }
 }
