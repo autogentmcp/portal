@@ -69,7 +69,7 @@ export default function AdminLoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="appearance-none block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  placeholder="admin@example.com"
+                  placeholder="admin@autogentmcp.com"
                 />
               </div>
             </div>
@@ -116,7 +116,7 @@ export default function AdminLoginPage() {
               </div>
               <div className="relative flex justify-center text-sm">
                 <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-                  Default credentials: admin@example.com / admin123
+                  Default credentials: admin@autogentmcp.com / admin123
                 </span>
               </div>
             </div>
