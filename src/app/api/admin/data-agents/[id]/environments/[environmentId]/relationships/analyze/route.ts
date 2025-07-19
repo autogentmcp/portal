@@ -95,32 +95,53 @@ export async function POST(
           where: {
             dataAgentId: id,
             environmentId: environmentId,
-            fromTableId: fromTable.id,
-            toTableId: toTable.id,
-            fromColumn: rel.sourceColumn,
-            toColumn: rel.targetColumn
+            sourceTableId: fromTable.id,
+            targetTableId: toTable.id,
+            sourceColumn: rel.sourceColumn,
+            targetColumn: rel.targetColumn
           }
         });
 
         if (!existingRelation) {
+          // Create the relationship in the database
+          const createdRelation = await (prisma.dataAgentRelation as any).create({
+            data: {
+              dataAgentId: id,
+              environmentId: environmentId,
+              sourceTableId: fromTable.id,
+              targetTableId: toTable.id,
+              sourceColumn: rel.sourceColumn,
+              targetColumn: rel.targetColumn,
+              relationshipType: rel.relationshipType,
+              description: rel.description,
+              example: rel.example,
+              confidence: rel.confidence,
+              isVerified: false // Default to unverified, admin can verify later
+            }
+          });
+          
           suggestedRelationships.push({
-            fromTableId: fromTable.id,
-            fromTableName: fromTable.tableName,
-            fromColumn: rel.sourceColumn,
-            toTableId: toTable.id,
-            toTableName: toTable.tableName,
-            toColumn: rel.targetColumn,
-            relationshipType,
-            confidence: rel.confidence > 0.8 ? 'HIGH' : rel.confidence > 0.5 ? 'MEDIUM' : 'LOW',
-            reasoning: rel.description
+            id: createdRelation.id,
+            sourceTableId: fromTable.id,
+            sourceTableName: fromTable.tableName,
+            sourceColumn: rel.sourceColumn,
+            targetTableId: toTable.id,
+            targetTableName: toTable.tableName,
+            targetColumn: rel.targetColumn,
+            relationshipType: rel.relationshipType,
+            confidence: rel.confidence,
+            description: rel.description,
+            example: rel.example,
+            isVerified: false
           });
         }
       }
 
       return NextResponse.json({
         success: true,
-        suggestedRelationships,
-        analysis: analysisResult.analysis,
+        createdRelationships: suggestedRelationships.length,
+        relationships: suggestedRelationships,
+        analysis: analysisResult.analysis || 'Relationship analysis completed',
         usage: analysisResult.usage
       });
 

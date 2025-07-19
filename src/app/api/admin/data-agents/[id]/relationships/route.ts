@@ -6,8 +6,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { id } = await params;
+    
     const relations = await prisma.dataAgentRelation.findMany({
-      where: { dataAgentId: params.id },
+      where: { dataAgentId: id },
       include: {
         sourceTable: true,
         targetTable: true
@@ -30,6 +32,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const {
       sourceTableId,
@@ -49,10 +52,23 @@ export async function POST(
       );
     }
 
+    // Get the environment ID from the source table
+    const sourceTable = await prisma.dataAgentTable.findUnique({
+      where: { id: sourceTableId },
+      select: { environmentId: true }
+    });
+
+    if (!sourceTable) {
+      return NextResponse.json(
+        { error: "Source table not found" },
+        { status: 404 }
+      );
+    }
+
     // Check if relationship already exists
     const existingRelation = await prisma.dataAgentRelation.findFirst({
       where: {
-        dataAgentId: params.id,
+        dataAgentId: id,
         sourceTableId,
         targetTableId,
         sourceColumn,
@@ -69,7 +85,8 @@ export async function POST(
 
     const relation = await prisma.dataAgentRelation.create({
       data: {
-        dataAgentId: params.id,
+        dataAgentId: id,
+        environmentId: sourceTable.environmentId,
         sourceTableId,
         targetTableId,
         relationshipType,

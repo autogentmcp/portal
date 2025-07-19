@@ -40,6 +40,7 @@ export interface TableAnalysisRequest {
     sampleValues?: string[];
   }>;
   rowCount?: number;
+  note?: string;
 }
 
 export interface FieldAnalysisRequest {
@@ -211,6 +212,16 @@ class LLMService {
   }>): Promise<StructuredRelationshipResponse> {
     const prompt = this.buildStructuredRelationshipPrompt(tables);
     
+    // Rough token estimation (4 chars per token average)
+    const estimatedInputTokens = Math.ceil(prompt.length / 4);
+    let maxTokens = 4000;
+    
+    // Adjust max tokens based on input size to leave room for response
+    if (estimatedInputTokens > 2000) {
+      maxTokens = Math.max(2000, 6000 - estimatedInputTokens);
+      console.log(`Large input detected. Estimated input tokens: ${estimatedInputTokens}, adjusted max_tokens to: ${maxTokens}`);
+    }
+    
     try {
       const response = await this.client.chat.completions.create({
         model: this.model,
@@ -224,11 +235,16 @@ class LLMService {
             content: prompt,
           },
         ],
-        max_tokens: 2000,
+        max_tokens: maxTokens,
         temperature: 0.1,
       });
 
       const content = response.choices[0]?.message?.content || '';
+      
+      // Check if response was potentially truncated due to token limits
+      if (response.usage && response.usage.completion_tokens >= 3900) {
+        console.warn('Response may be truncated due to token limit. Completion tokens:', response.usage.completion_tokens);
+      }
       
       // Try to parse structured data from the response
       const { analysis, relationships } = this.parseStructuredRelationshipResponse(content);
@@ -253,6 +269,10 @@ class LLMService {
     
     if (request.rowCount) {
       prompt += `Row Count: ${request.rowCount}\n`;
+    }
+    
+    if (request.note) {
+      prompt += `\n${request.note}\n`;
     }
     
     prompt += `\nFields:\n`;
@@ -347,6 +367,11 @@ Format as a clear list with explanations.`;
   }>): string {
     let prompt = `Analyze the following database tables to identify relationships. Return both analysis and structured JSON data.\n\n`;
     
+    // If too many tables, warn about focusing on most likely relationships
+    if (tables.length > 10) {
+      prompt += `NOTE: Large schema detected (${tables.length} tables). Focus on the most obvious and high-confidence relationships to stay within token limits.\n\n`;
+    }
+    
     tables.forEach(table => {
       prompt += `Table: ${table.name}\n`;
       table.fields.forEach(field => {
@@ -377,14 +402,20 @@ Format as a clear list with explanations.`;
 ]
 \`\`\`
 
-Only include relationships with confidence >= 0.7. Use relationship types: "one_to_one", "one_to_many", "many_to_many".
+IMPORTANT: 
+- Only include relationships with confidence >= 0.7
+- Use relationship types: "one_to_one", "one_to_many", "many_to_many"
+- Always close the JSON array with ] and the code block with \`\`\`
+- If no relationships found, return an empty array []
+- Keep your response under 4000 tokens - prioritize the highest confidence relationships
+- Be concise in descriptions and examples
 
 Format your response as:
 **ANALYSIS:**
-[Your detailed text analysis here]
+[Your detailed text analysis here - keep concise]
 
 **STRUCTURED_DATA:**
-[JSON array here]`;
+[Complete JSON array here - prioritize high-confidence relationships]`;
 
     return prompt;
   }
@@ -402,7 +433,18 @@ Format your response as:
       
       if (jsonMatch) {
         const jsonStr = jsonMatch[1] || jsonMatch[0];
-        relationships = JSON.parse(jsonStr.startsWith('[') ? jsonStr : `[${jsonStr}]`);
+        console.log('Attempting to parse JSON string:', jsonStr.substring(0, 200) + '...');
+        
+        // Check if JSON string appears to be truncated
+        if (jsonStr.includes('"') && !this.isValidJSONStructure(jsonStr)) {
+          console.warn('JSON appears to be truncated or malformed, attempting to clean it');
+          const cleanedJson = this.cleanTruncatedJson(jsonStr);
+          if (cleanedJson) {
+            relationships = JSON.parse(cleanedJson);
+          }
+        } else {
+          relationships = JSON.parse(jsonStr.startsWith('[') ? jsonStr : `[${jsonStr}]`);
+        }
         
         // Validate and filter relationships
         relationships = relationships.filter(rel => 
@@ -414,6 +456,7 @@ Format your response as:
       }
     } catch (error) {
       console.warn('Failed to parse structured relationship data:', error);
+      console.warn('Raw structured data:', structuredData.substring(0, 500));
       // Continue with empty relationships array
     }
     
@@ -421,6 +464,54 @@ Format your response as:
       analysis: analysis.trim() || content,
       relationships
     };
+  }
+
+  private isValidJSONStructure(jsonStr: string): boolean {
+    // Basic check for balanced braces and brackets
+    const openBraces = (jsonStr.match(/\{/g) || []).length;
+    const closeBraces = (jsonStr.match(/\}/g) || []).length;
+    const openBrackets = (jsonStr.match(/\[/g) || []).length;
+    const closeBrackets = (jsonStr.match(/\]/g) || []).length;
+    
+    return openBraces === closeBraces && openBrackets === closeBrackets;
+  }
+
+  private cleanTruncatedJson(jsonStr: string): string | null {
+    try {
+      // Remove trailing incomplete content
+      let cleaned = jsonStr.trim();
+      
+      // Remove any incomplete text after the last complete object or array
+      const patterns = [
+        /,\s*"[^"]*$/,  // Remove incomplete property at end
+        /,\s*$/, // Remove trailing comma
+        /"[^"]*$/,  // Remove incomplete string at end
+      ];
+      
+      patterns.forEach(pattern => {
+        cleaned = cleaned.replace(pattern, '');
+      });
+      
+      // If it ends with incomplete text, try to find the last complete object
+      const lastCompleteObject = cleaned.lastIndexOf('}');
+      const lastCompleteArray = cleaned.lastIndexOf(']');
+      
+      if (lastCompleteObject > lastCompleteArray && lastCompleteObject > 0) {
+        // Truncate to last complete object
+        cleaned = cleaned.substring(0, lastCompleteObject + 1);
+        if (cleaned.startsWith('[') && !cleaned.endsWith(']')) {
+          cleaned += ']';
+        }
+      }
+      
+      // Test if the cleaned JSON is valid
+      const testJson = cleaned.startsWith('[') ? cleaned : `[${cleaned}]`;
+      JSON.parse(testJson);
+      return cleaned;
+    } catch (error) {
+      console.warn('Unable to clean truncated JSON:', error);
+      return null;
+    }
   }
 
   private extractSection(content: string, startMarker: string, endMarker: string | null): string {

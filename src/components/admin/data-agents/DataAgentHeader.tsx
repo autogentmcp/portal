@@ -15,7 +15,7 @@ export default function DataAgentHeader({
 }: DataAgentHeaderProps) {
   // Check if all environment types are created
   const environments = dataAgent.environments || [];
-  const existingTypes = new Set(environments.map(env => env.environmentType));
+  const existingTypes = new Set(environments.map(env => env.name)); // Use env.name which contains the environment type
   const allTypesCreated = ENVIRONMENT_TYPES.every(type => existingTypes.has(type.value));
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm mb-6">

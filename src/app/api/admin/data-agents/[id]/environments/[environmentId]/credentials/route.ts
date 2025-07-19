@@ -46,15 +46,33 @@ export async function PUT(
       await secretManager.init();
       
       if (secretManager.hasProvider()) {
-        const credentials = { username, password };
+        // Get existing credentials to merge with new username/password
+        let existingCredentials = {};
+        if (environment.vaultKey) {
+          try {
+            existingCredentials = await secretManager.getCredentials(environment.vaultKey) || {};
+          } catch (error) {
+            console.log('No existing credentials found, creating new ones');
+          }
+        }
+        
+        // Merge existing connection config with new credentials
+        const updatedCredentials = {
+          ...existingCredentials,
+          host: environment.connectionConfig.host,
+          port: String(environment.connectionConfig.port || '5432'),
+          database: environment.connectionConfig.database,
+          username: String(username),
+          password: String(password)
+        };
         
         if (environment.vaultKey) {
           // Update existing credentials
-          await secretManager.storeCredentials(environment.vaultKey, credentials);
+          await secretManager.storeCredentials(environment.vaultKey, updatedCredentials);
         } else {
           // Create new vault entry
           const vaultKey = `data-agent-${id}-env-${environmentId}-${Date.now()}`;
-          await secretManager.storeCredentials(vaultKey, credentials);
+          await secretManager.storeCredentials(vaultKey, updatedCredentials);
           
           // Update environment with new vault key
           await (prisma.environment as any).update({

@@ -6,7 +6,9 @@ interface TablesTabProps {
   loadingTables: boolean;
   onAnalyzeTable?: (tableId: string) => void;
   onViewEditTable?: (tableId: string) => void;
+  onDeleteTable?: (tableId: string) => void;
   analyzingTableId?: string | null;
+  deletingTableId?: string | null;
 }
 
 export default function TablesTab({
@@ -15,7 +17,9 @@ export default function TablesTab({
   loadingTables,
   onAnalyzeTable,
   onViewEditTable,
-  analyzingTableId
+  onDeleteTable,
+  analyzingTableId,
+  deletingTableId
 }: TablesTabProps) {
   return (
     <div>
@@ -30,9 +34,9 @@ export default function TablesTab({
         </button>
       </div>
       
-      {environment.dataAgentTables && environment.dataAgentTables.length > 0 ? (
+      {environment.tables && environment.tables.length > 0 ? (
         <div className="grid gap-4">
-          {environment.dataAgentTables.map((table) => (
+          {environment.tables.map((table) => (
             <div key={table.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -82,6 +86,15 @@ export default function TablesTab({
                         ? 'Re-analyze' 
                         : 'Analyze'
                       }
+                    </button>
+                  )}
+                  {onDeleteTable && (
+                    <button
+                      onClick={() => onDeleteTable(table.id)}
+                      disabled={deletingTableId === table.id}
+                      className="px-3 py-1 text-xs font-medium text-red-700 bg-red-100 border border-red-300 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 dark:bg-red-900/50 dark:text-red-300 dark:border-red-600 dark:hover:bg-red-800"
+                    >
+                      {deletingTableId === table.id ? 'Deleting...' : 'Delete'}
                     </button>
                   )}
                 </div>

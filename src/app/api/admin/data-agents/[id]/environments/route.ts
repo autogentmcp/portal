@@ -7,20 +7,20 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { name, description, connectionConfig } = await request.json();
-    const dataAgentId = params.id;
+    const { environmentType, description, connectionConfig, connectionTested } = await request.json();
+    const { id } = await params;
+    const dataAgentId = id;
 
-    if (!name || !connectionConfig?.host || !connectionConfig?.database) {
+    if (!environmentType || !connectionConfig?.host || !connectionConfig?.database) {
       return NextResponse.json(
-        { error: 'Name, host, and database are required' },
+        { error: 'Environment type, host, and database are required' },
         { status: 400 }
       );
     }
 
     // Get the original data agent to copy properties
     const dataAgent = await prisma.dataAgent.findUnique({
-      where: { id: dataAgentId },
-      include: { user: true }
+      where: { id: dataAgentId }
     });
 
     if (!dataAgent) {
@@ -62,17 +62,21 @@ export async function POST(
     }
 
     // Create environment in the proper Environment table
+    // Set initial status based on whether connection was tested during creation
+    const initialStatus = connectionTested ? 'ACTIVE' : 'UNKNOWN';
+    const initialHealthStatus = connectionTested ? 'HEALTHY' : 'UNKNOWN';
+    
     const environment = await prisma.environment.create({
       data: {
-        name,
+        name: environmentType,
         description: description || null,
-        status: 'ACTIVE',
-        healthStatus: 'HEALTHY',
-        environmentType: 'DATA_AGENT',
-        dataAgentId,
+        status: initialStatus,
+        healthStatus: initialHealthStatus,
+        environmentType: 'DATA_AGENT', // Set the type to DATA_AGENT
+        dataAgentId: dataAgentId,       // Link to the data agent
         connectionConfig: finalConnectionConfig,
         vaultKey,
-        lastConnectedAt: new Date()
+        lastConnectedAt: connectionTested ? new Date() : null
       }
     });
 
@@ -91,15 +95,16 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const dataAgentId = params.id;
+    const { id } = await params;
+    const dataAgentId = id;
 
-    const environments = await prisma.environment.findMany({
+    const environments = await (prisma.environment as any).findMany({
       where: { 
         dataAgentId,
         environmentType: 'DATA_AGENT'
       },
       include: {
-        dataAgentTables: {
+        tables: {
           orderBy: { tableName: 'asc' }
         }
       },

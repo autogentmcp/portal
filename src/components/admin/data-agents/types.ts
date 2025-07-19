@@ -31,10 +31,9 @@ export interface Environment {
   lastConnectedAt?: string;
   createdAt: string;
   tables?: Table[];
-  dataAgentTables?: Table[];
   _count?: {
-    dataAgentTables: number;
-    dataAgentRelations: number;
+    tables: number;
+    relations: number;
   };
 }
 

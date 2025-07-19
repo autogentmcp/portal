@@ -15,7 +15,7 @@ export async function GET(
 
     const { id } = await params
 
-    const dataAgent = await prisma.dataAgent.findUnique({
+    const dataAgent = await (prisma.dataAgent as any).findUnique({
       where: { id },
       include: {
         user: {
@@ -25,35 +25,43 @@ export async function GET(
             email: true,
           }
         },
-        tables: {
+        environments: {
           include: {
-            columns: {
+            tables: {
+              include: {
+                columns: {
+                  orderBy: {
+                    columnName: 'asc'
+                  }
+                },
+                _count: {
+                  select: {
+                    sourceRelations: true,
+                    targetRelations: true
+                  }
+                }
+              },
               orderBy: {
-                columnName: 'asc'
+                tableName: 'asc'
+              }
+            },
+            relations: {
+              include: {
+                sourceTable: true,
+                targetTable: true
+              },
+              orderBy: {
+                createdAt: 'desc'
+              }
+            },
+            _count: {
+              select: {
+                tables: true,
+                relations: true
               }
             }
           },
-          orderBy: {
-            tableName: 'asc'
-          }
-        },
-        relations: {
-          include: {
-            sourceTable: {
-              select: {
-                id: true,
-                tableName: true,
-                schemaName: true
-              }
-            },
-            targetTable: {
-              select: {
-                id: true,
-                tableName: true,
-                schemaName: true
-              }
-            }
-          }
+          orderBy: { createdAt: 'desc' }
         }
       }
     })
@@ -86,46 +94,7 @@ export async function GET(
       }
     }
 
-    // Fetch environments for this data agent
-    const environments = await prisma.environment.findMany({
-      where: { 
-        dataAgentId: id,
-        environmentType: 'DATA_AGENT'
-      },
-      include: {
-        dataAgentTables: {
-          include: {
-            columns: {
-              orderBy: {
-                columnName: 'asc'
-              }
-            },
-            _count: {
-              select: {
-                sourceRelations: true,
-                targetRelations: true
-              }
-            }
-          },
-          orderBy: { tableName: 'asc' }
-        },
-        _count: {
-          select: {
-            dataAgentTables: true,
-            dataAgentRelations: true
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    // Add mock environments for environment-based UI
-    const response = {
-      ...dataAgent,
-      environments
-    };
-
-    return NextResponse.json(response)
+    return NextResponse.json(dataAgent)
   } catch (error) {
     console.error('Error fetching data agent')
     return NextResponse.json(

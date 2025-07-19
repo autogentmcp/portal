@@ -16,13 +16,13 @@ export default function EnvironmentTabs({
   }
 
   const getEnvironmentLabel = (environment: Environment) => {
-    // First try to get the label from ENVIRONMENT_TYPES
-    const envTypeConfig = ENVIRONMENT_TYPES.find(t => t.value === environment.environmentType);
+    // First try to get the label from ENVIRONMENT_TYPES using environment.name (which contains the type)
+    const envTypeConfig = ENVIRONMENT_TYPES.find(t => t.value === environment.name);
     if (envTypeConfig) {
       return envTypeConfig.label;
     }
-    // Fallback to custom name if it exists
-    return environment.name || environment.environmentType;
+    // Fallback to environment name
+    return environment.name || 'Environment';
   };
 
   const getEnvironmentIcon = (envType: string) => {
@@ -52,14 +52,16 @@ export default function EnvironmentTabs({
             }`}
           >
             <div className="flex items-center gap-2">
-              <span className="text-base">{getEnvironmentIcon(environment.environmentType)}</span>
+              <span className="text-base">{getEnvironmentIcon(environment.name)}</span>
               <span>{getEnvironmentLabel(environment)}</span>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                 environment.status === 'ACTIVE' 
                   ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200'
-                  : 'bg-gray-100 text-gray-800 dark:bg-gray-900/50 dark:text-gray-200'
+                  : environment.status === 'UNKNOWN'
+                  ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200'
               }`}>
-                {environment.status}
+                {environment.status === 'UNKNOWN' ? 'UNTESTED' : environment.status}
               </span>
             </div>
           </button>

@@ -58,15 +58,23 @@ model Environment {
   lastHealthCheckAt    DateTime?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
-  applicationId        String
+  environmentType      String               @default("APPLICATION") // APPLICATION, DATA_AGENT
+  applicationId        String?              // Optional - only for APPLICATION type
+  dataAgentId          String?              // Optional - only for DATA_AGENT type
+  connectionConfig     Json?                // Connection config for DATA_AGENT environments
+  vaultKey             String?              // Vault key for storing sensitive data
+  lastConnectedAt      DateTime?            // Last connection time for DATA_AGENT environments
   apiKeys              ApiKey[]
   endpoints            Endpoint[]
   healthCheckLogs      HealthCheckLog[]
   security             EnvironmentSecurity?
   dataAgents           DataAgent[]
-  application          Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  tables               DataAgentTable[]
+  relations            DataAgentRelation[]
+  application          Application?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  dataAgent            DataAgent?           @relation("DataAgentEnvironments", fields: [dataAgentId], references: [id], onDelete: Cascade)
 
-  @@unique([applicationId, name])
+  @@unique([environmentType, applicationId, dataAgentId, name]) // Ensure unique names per context
   @@map("environments")
 }
 
@@ -175,6 +183,7 @@ model DataAgent {
   user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   application            Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   environment            Environment?        @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  environments           Environment[]       @relation("DataAgentEnvironments") // One-to-many relationship
   tables                 DataAgentTable[]
   relations              DataAgentRelation[]
 
@@ -185,6 +194,7 @@ model DataAgent {
 model DataAgentTable {
   id                String                @id @default(cuid())
   dataAgentId       String
+  environmentId     String
   tableName         String
   schemaName        String?               // For databases that support schemas
   displayName       String?               // User-friendly name
@@ -196,11 +206,12 @@ model DataAgentTable {
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   dataAgent         DataAgent             @relation(fields: [dataAgentId], references: [id], onDelete: Cascade)
+  environment       Environment           @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   columns           DataAgentTableColumn[]
   sourceRelations   DataAgentRelation[]   @relation("SourceTable")
   targetRelations   DataAgentRelation[]   @relation("TargetTable")
 
-  @@unique([dataAgentId, tableName, schemaName])
+  @@unique([dataAgentId, environmentId, tableName, schemaName])
   @@map("data_agent_tables")
 }
 
@@ -229,6 +240,7 @@ model DataAgentTableColumn {
 model DataAgentRelation {
   id              String           @id @default(cuid())
   dataAgentId     String
+  environmentId   String
   sourceTableId   String
   targetTableId   String
   relationshipType String          // "one_to_one", "one_to_many", "many_to_many"
@@ -241,9 +253,10 @@ model DataAgentRelation {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   dataAgent       DataAgent        @relation(fields: [dataAgentId], references: [id], onDelete: Cascade)
+  environment     Environment      @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   sourceTable     DataAgentTable   @relation("SourceTable", fields: [sourceTableId], references: [id], onDelete: Cascade)
   targetTable     DataAgentTable   @relation("TargetTable", fields: [targetTableId], references: [id], onDelete: Cascade)
 
-  @@unique([dataAgentId, sourceTableId, targetTableId, sourceColumn, targetColumn])
+  @@unique([dataAgentId, environmentId, sourceTableId, targetTableId, sourceColumn, targetColumn])
   @@map("data_agent_relations")
 }

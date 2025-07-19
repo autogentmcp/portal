@@ -25,6 +25,8 @@ import ImportTablesModal from "@/components/admin/data-agents/ImportTablesModal"
 import NoEnvironmentState from "@/components/admin/data-agents/NoEnvironmentState";
 import EditCredentialsModal from "@/components/admin/data-agents/EditCredentialsModal";
 import EditTableModal from "@/components/admin/data-agents/EditTableModal";
+import EditRelationshipModal from "@/components/admin/data-agents/EditRelationshipModal";
+import RelationshipDiagram from "@/components/admin/data-agents/RelationshipDiagram";
 import { useNotifications } from "@/components/ui/NotificationContext";
 import { NotificationProvider } from "@/components/ui/NotificationContext";
 import NotificationContainer from "@/components/ui/NotificationContainer";
@@ -68,6 +70,7 @@ function DataAgentDetailPageContent() {
       password: ''
     }
   });
+  const [creationConnectionTestResult, setCreationConnectionTestResult] = useState<{ success: boolean; error?: string; message?: string } | null>(null);
   
   // Environment editing states
   const [showEditCredentialsModal, setShowEditCredentialsModal] = useState(false);
@@ -87,6 +90,10 @@ function DataAgentDetailPageContent() {
   const [loadingRelationships, setLoadingRelationships] = useState(false);
   const [analyzingRelationships, setAnalyzingRelationships] = useState(false);
   
+  // Environment tables state (for diagram)
+  const [environmentTables, setEnvironmentTables] = useState<any[]>([]);
+  const [loadingEnvironmentTables, setLoadingEnvironmentTables] = useState(false);
+  
   // Connection test states
   const [testingConnection, setTestingConnection] = useState(false);
   const [deletingAgent, setDeletingAgent] = useState(false);
@@ -94,11 +101,17 @@ function DataAgentDetailPageContent() {
   
   // Table analysis states
   const [analyzingTableId, setAnalyzingTableId] = useState<string | null>(null);
+  const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   
   // Table editing modal states
   const [showEditTableModal, setShowEditTableModal] = useState(false);
   const [selectedTableForEdit, setSelectedTableForEdit] = useState<any>(null);
   const [savingTable, setSavingTable] = useState(false);
+
+  // Relationship editing modal states
+  const [showEditRelationshipModal, setShowEditRelationshipModal] = useState(false);
+  const [selectedRelationshipForEdit, setSelectedRelationshipForEdit] = useState<Relationship | null>(null);
+  const [savingRelationship, setSavingRelationship] = useState(false);
 
   // Notification hook
   const { addNotification } = useNotifications();
@@ -116,6 +129,7 @@ function DataAgentDetailPageContent() {
   useEffect(() => {
     if (activeTab === 'relationships' && activeEnvironmentId) {
       fetchRelationships();
+      fetchEnvironmentTables();
     }
   }, [activeTab, activeEnvironmentId]);
 
@@ -143,12 +157,18 @@ function DataAgentDetailPageContent() {
     if (!dataAgent) return;
     
     try {
+      // Prepare the payload with connection test result status
+      const payload = {
+        ...newEnvironment,
+        connectionTested: creationConnectionTestResult?.success || false
+      };
+
       const response = await fetch(`/api/admin/data-agents/${dataAgent.id}/environments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newEnvironment),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -169,6 +189,7 @@ function DataAgentDetailPageContent() {
             password: ''
           }
         });
+        setCreationConnectionTestResult(null);
         await fetchDataAgent();
         setActiveEnvironmentId(environment.id);
         addNotification({
@@ -191,6 +212,45 @@ function DataAgentDetailPageContent() {
         title: 'Environment Creation Failed',
         message: 'An error occurred while creating the environment'
       });
+    }
+  };
+
+  const handleTestConnectionDuringCreation = async (environment: NewEnvironment): Promise<{ success: boolean; error?: string; message?: string }> => {
+    if (!dataAgent) {
+      return { success: false, error: 'Data agent not found' };
+    }
+
+    try {
+      // Create a test payload with the connection details
+      const testPayload = {
+        connectionType: dataAgent.connectionType,
+        connectionConfig: environment.connectionConfig,
+        credentials: environment.credentials
+      };
+
+      const response = await fetch(`/api/admin/data-agents/${dataAgent.id}/test-connection-preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(testPayload)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setCreationConnectionTestResult(result);
+        return result;
+      } else {
+        const errorData = await response.json();
+        const result = { success: false, error: errorData.error || 'Connection test failed' };
+        setCreationConnectionTestResult(result);
+        return result;
+      }
+    } catch (error) {
+      console.error('Error testing connection during creation:', error);
+      const result = { success: false, error: 'Failed to test connection' };
+      setCreationConnectionTestResult(result);
+      return result;
     }
   };
 
@@ -341,6 +401,7 @@ function DataAgentDetailPageContent() {
         setShowImportModal(false);
         setSelectedTables([]);
         await fetchDataAgent();
+        await fetchEnvironmentTables(); // Update tables for diagram
         addNotification({
           type: 'success',
           title: 'Import Successful',
@@ -369,12 +430,26 @@ function DataAgentDetailPageContent() {
   const fetchRelationships = async () => {
     if (!activeEnvironmentId) return;
     
+    console.log('fetchRelationships - activeEnvironmentId:', activeEnvironmentId);
+    console.log('fetchRelationships - params.id:', params.id);
+    
     setLoadingRelationships(true);
     try {
-      const response = await fetch(`/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/relationships`);
+      const url = `/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/relationships`;
+      console.log('fetchRelationships - URL:', url);
+      
+      const response = await fetch(url);
+      console.log('fetchRelationships - response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
-        setRelationships(data);
+        console.log('fetchRelationships - full response data:', data);
+        console.log('fetchRelationships - data.relationships:', data.relationships);
+        setRelationships(data.relationships || []);
+      } else {
+        console.error('fetchRelationships - response not ok:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('fetchRelationships - error text:', errorText);
       }
     } catch (err) {
       console.error('Failed to fetch relationships:', err);
@@ -383,12 +458,31 @@ function DataAgentDetailPageContent() {
     }
   };
 
+  const fetchEnvironmentTables = async () => {
+    if (!activeEnvironmentId) return;
+    
+    setLoadingEnvironmentTables(true);
+    try {
+      const response = await fetch(`/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/tables`);
+      if (response.ok) {
+        const data = await response.json();
+        setEnvironmentTables(data.tables || []);
+      } else {
+        console.error('Failed to fetch environment tables:', response.status);
+      }
+    } catch (err) {
+      console.error('Failed to fetch environment tables:', err);
+    } finally {
+      setLoadingEnvironmentTables(false);
+    }
+  };
+
   const handleAnalyzeRelationships = async () => {
     if (!activeEnvironmentId) return;
     
     setAnalyzingRelationships(true);
     try {
-      const response = await fetch(`/api/admin/data-agents/${params.id}/relationships/analyze`, {
+      const response = await fetch(`/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/relationships/analyze`, {
         method: 'POST'
       });
       
@@ -513,7 +607,7 @@ function DataAgentDetailPageContent() {
     
     setAnalyzingTableId(tableId);
     try {
-      const response = await fetch(`/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/tables/${tableId}/analyze`, {
+      const response = await fetch(`/api/admin/data-agents/tables/${tableId}/analyze`, {
         method: 'POST'
       });
       
@@ -546,6 +640,40 @@ function DataAgentDetailPageContent() {
   const handleViewEditTable = async (tableId: string) => {
     // Navigate to the full page for view/edit
     router.push(`/admin/data-agents/tables/${tableId}`);
+  };
+
+  const handleDeleteTable = async (tableId: string) => {
+    setDeletingTableId(tableId);
+    try {
+      const response = await fetch(`/api/admin/data-agents/tables/${tableId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        await fetchDataAgent();
+        addNotification({
+          type: 'success',
+          title: 'Table Deleted',
+          message: 'Table has been deleted successfully.'
+        });
+      } else {
+        const errorData = await response.json();
+        addNotification({
+          type: 'error',
+          title: 'Delete Failed',
+          message: errorData.error || 'Failed to delete table'
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting table:', error);
+      addNotification({
+        type: 'error',
+        title: 'Delete Error',
+        message: 'An error occurred while deleting the table.'
+      });
+    } finally {
+      setDeletingTableId(null);
+    }
   };
 
   const handleSaveTable = async (tableId: string, updates: any) => {
@@ -587,6 +715,92 @@ function DataAgentDetailPageContent() {
     }
   };
 
+  const handleVerifyRelationship = async (relationshipId: string, isVerified: boolean) => {
+    try {
+      const response = await fetch(`/api/admin/data-agents/${params.id}/relationships/${relationshipId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isVerified }),
+      });
+
+      if (response.ok) {
+        await fetchRelationships(); // Refresh the relationships list
+        addNotification({
+          type: 'success',
+          title: 'Relationship Updated',
+          message: `Relationship has been ${isVerified ? 'verified' : 'unverified'} successfully.`
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Update Failed',
+          message: 'Failed to update relationship verification status.'
+        });
+      }
+    } catch (error) {
+      console.error('Error updating relationship:', error);
+      addNotification({
+        type: 'error',
+        title: 'Update Error',
+        message: 'An error occurred while updating the relationship.'
+      });
+    }
+  };
+
+  const handleEditRelationship = (relationship: Relationship) => {
+    setSelectedRelationshipForEdit(relationship);
+    setShowEditRelationshipModal(true);
+  };
+
+  const handleSaveRelationship = async (relationshipId: string, updates: any) => {
+    if (!dataAgent) return;
+
+    setSavingRelationship(true);
+    try {
+      const response = await fetch(
+        `/api/admin/data-agents/${dataAgent.id}/relationships/${relationshipId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updates),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to update relationship');
+      }
+
+      const updated = await response.json();
+      
+      // Update the relationships in state
+      setRelationships(prev => prev.map(rel => 
+        rel.id === relationshipId ? { ...rel, ...updated } : rel
+      ));
+
+      addNotification({
+        type: 'success',
+        title: 'Relationship Updated',
+        message: 'The relationship has been successfully updated.'
+      });
+
+      setShowEditRelationshipModal(false);
+      setSelectedRelationshipForEdit(null);
+    } catch (error) {
+      console.error('Error updating relationship:', error);
+      addNotification({
+        type: 'error',
+        title: 'Update Error',
+        message: 'Failed to update the relationship. Please try again.'
+      });
+    } finally {
+      setSavingRelationship(false);
+    }
+  };
+
   if (loading) {
     return (
       <AdminLayout>
@@ -620,21 +834,17 @@ function DataAgentDetailPageContent() {
           deletingAgent={deletingAgent}
         />
 
-        {/* Environment Tabs */}
-        {dataAgent.environments && dataAgent.environments.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm mb-6">
+        {/* Environment Section - Combined Tabs and Content */}
+        {dataAgent.environments && dataAgent.environments.length > 0 && currentEnvironment ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+            {/* Environment Tabs - Top of the card */}
             <EnvironmentTabs
               environments={dataAgent.environments}
               activeEnvironmentId={activeEnvironmentId}
               onEnvironmentChange={setActiveEnvironmentId}
             />
-          </div>
-        )}
-
-        {/* Environment Content */}
-        {currentEnvironment ? (
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
-            {/* Environment Header */}
+            
+            {/* Environment Header - Connected to tabs */}
             <EnvironmentHeader
               environment={currentEnvironment}
               onTestConnection={handleTestConnection}
@@ -665,18 +875,32 @@ function DataAgentDetailPageContent() {
                   loadingTables={loadingTables}
                   onAnalyzeTable={handleAnalyzeTable}
                   onViewEditTable={handleViewEditTable}
+                  onDeleteTable={handleDeleteTable}
                   analyzingTableId={analyzingTableId}
+                  deletingTableId={deletingTableId}
                 />
               )}
 
               {activeTab === 'relationships' && (
-                <RelationshipsTab
-                  environment={currentEnvironment}
-                  relationships={relationships}
-                  loadingRelationships={loadingRelationships}
-                  analyzingRelationships={analyzingRelationships}
-                  onAnalyzeRelationships={handleAnalyzeRelationships}
-                />
+                <div className="space-y-6">
+                  {/* Relationship Diagram */}
+                  <RelationshipDiagram
+                    environment={currentEnvironment}
+                    tables={environmentTables}
+                    relationships={relationships}
+                  />
+                  
+                  {/* Relationships Tab */}
+                  <RelationshipsTab
+                    environment={currentEnvironment}
+                    relationships={relationships}
+                    loadingRelationships={loadingRelationships}
+                    analyzingRelationships={analyzingRelationships}
+                    onAnalyzeRelationships={handleAnalyzeRelationships}
+                    onVerifyRelationship={handleVerifyRelationship}
+                    onEditRelationship={handleEditRelationship}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -689,9 +913,13 @@ function DataAgentDetailPageContent() {
           isOpen={showCreateEnvironmentModal}
           newEnvironment={newEnvironment}
           dataAgent={dataAgent}
-          onClose={() => setShowCreateEnvironmentModal(false)}
+          onClose={() => {
+            setShowCreateEnvironmentModal(false);
+            setCreationConnectionTestResult(null);
+          }}
           onCreate={handleCreateEnvironment}
           onChange={setNewEnvironment}
+          onTestConnection={handleTestConnectionDuringCreation}
         />
 
         <ImportTablesModal
@@ -733,6 +961,17 @@ function DataAgentDetailPageContent() {
           }}
           onSave={handleSaveTable}
           saving={savingTable}
+        />
+
+        <EditRelationshipModal
+          isOpen={showEditRelationshipModal}
+          relationship={selectedRelationshipForEdit}
+          onClose={() => {
+            setShowEditRelationshipModal(false);
+            setSelectedRelationshipForEdit(null);
+          }}
+          onSave={handleSaveRelationship}
+          saving={savingRelationship}
         />
       </div>
     </AdminLayout>

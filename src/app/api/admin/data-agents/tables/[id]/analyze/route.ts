@@ -16,12 +16,13 @@ export async function POST(
 
     const { id } = await params;
 
-    // Get table with fields
+    // Get table with fields and environment
     const table = await prisma.dataAgentTable.findUnique({
       where: { id },
       include: {
         columns: true,
         dataAgent: true,
+        environment: true,
       },
     });
 
@@ -38,6 +39,7 @@ export async function POST(
     try {
       // Get sample data for analysis
       const sampleData = await getSampleData(table);
+      const hasSampleData = sampleData && Object.keys(sampleData).length > 0;
       
       // Prepare LLM request
       const llmService = getLLMService();
@@ -51,6 +53,7 @@ export async function POST(
           sampleValues: Array.isArray(sampleData[field.columnName]) ? sampleData[field.columnName] as string[] : [],
         })),
         rowCount: sampleData.rowCount,
+        note: hasSampleData ? undefined : "Note: Analysis performed without sample data due to database connection issues."
       };
 
       // Analyze table
@@ -141,17 +144,23 @@ interface SampleDataResult {
 // Helper function to get sample data from the table
 async function getSampleData(table: any): Promise<SampleDataResult> {
   const dataAgent = table.dataAgent;
+  const environment = table.environment;
   
-  // Get credentials from vault
+  // Get credentials from vault using environment's vaultKey
   let credentials = null;
-  if (dataAgent.vaultKey) {
+  if (environment && environment.vaultKey) {
     try {
       const { SecretManager } = await import('@/lib/secrets');
       const secretManager = SecretManager.getInstance();
       await secretManager.init();
       
       if (secretManager.hasProvider()) {
-        credentials = await secretManager.getCredentials(dataAgent.vaultKey);
+        credentials = await secretManager.getCredentials(environment.vaultKey);
+        
+        // Ensure password is a string (same as in import)
+        if (credentials && credentials.password && typeof credentials.password !== 'string') {
+          credentials.password = String(credentials.password);
+        }
       }
     } catch (error) {
       console.error('Failed to retrieve credentials for sample data:', error);
@@ -159,31 +168,35 @@ async function getSampleData(table: any): Promise<SampleDataResult> {
     }
   }
 
+  // Use environment connectionConfig if available, fallback to dataAgent
+  const connectionConfig = environment?.connectionConfig || dataAgent.connectionConfig;
+
   try {
     switch (dataAgent.connectionType.toLowerCase()) {
       case 'postgres':
       case 'postgresql':
-        return await getPostgresSampleData(dataAgent.connectionConfig, credentials, table.tableName);
+        return await getPostgresSampleData(connectionConfig, credentials, table.tableName);
       
       case 'mysql':
-        return await getMySQLSampleData(dataAgent.connectionConfig, credentials, table.tableName);
+        return await getMySQLSampleData(connectionConfig, credentials, table.tableName);
       
       case 'mssql':
       case 'sqlserver':
-        return await getMSSQLSampleData(dataAgent.connectionConfig, credentials, table.tableName);
+        return await getMSSQLSampleData(connectionConfig, credentials, table.tableName);
       
       case 'bigquery':
-        return await getBigQuerySampleData(dataAgent.connectionConfig, credentials, table.tableName);
+        return await getBigQuerySampleData(connectionConfig, credentials, table.tableName);
       
       case 'databricks':
-        return await getDatabricksSampleData(dataAgent.connectionConfig, credentials, table.tableName);
+        return await getDatabricksSampleData(connectionConfig, credentials, table.tableName);
       
       default:
         console.warn(`Sample data not supported for connection type: ${dataAgent.connectionType}`);
         return {};
     }
   } catch (error) {
-    console.error('Error getting sample data:', error);
+    console.warn(`Failed to get sample data for table ${table.tableName}:`, error instanceof Error ? error.message : error);
+    // Return empty object so analysis can continue without sample data
     return {};
   }
 }
@@ -228,8 +241,22 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
     }
     
     return { ...sampleData, rowCount };
+  } catch (error) {
+    const err = error as any;
+    console.warn(`PostgreSQL connection failed for table ${tableName}:`, {
+      code: err.code,
+      message: err.message,
+      host: config.host,
+      port: config.port || 5432,
+      database: config.database
+    });
+    throw error;
   } finally {
-    await client.end();
+    try {
+      await client.end();
+    } catch (endError) {
+      // Ignore cleanup errors
+    }
   }
 }
 

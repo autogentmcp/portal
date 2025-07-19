@@ -54,6 +54,8 @@ export default function DataAgentsPage() {
         return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900'
       case 'INACTIVE':
         return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-800'
+      case 'UNKNOWN':
+        return 'text-gray-500 bg-gray-50 dark:text-gray-400 dark:bg-gray-800'
       case 'CONNECTING':
         return 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900'
       case 'ERROR':

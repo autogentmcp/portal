@@ -29,14 +29,14 @@ export async function DELETE(
     const environment = await (prisma.environment as any).findUnique({
       where: { id: environmentId },
       include: {
-        dataAgentTables: {
+        tables: {
           include: {
             columns: true,
             sourceRelations: true,
             targetRelations: true
           }
         },
-        dataAgentRelations: true
+        relations: true
       }
     });
 
@@ -54,7 +54,7 @@ export async function DELETE(
       });
 
       // Delete all table columns for tables in this environment
-      const tableIds = environment.dataAgentTables.map((table: any) => table.id);
+      const tableIds = environment.tables.map((table: any) => table.id);
       if (tableIds.length > 0) {
         await (tx.dataAgentTableColumn as any).deleteMany({
           where: {
@@ -102,8 +102,8 @@ export async function DELETE(
       message: 'Environment and all associated data deleted successfully',
       deletedData: {
         environment: environment.name,
-        tablesDeleted: environment.dataAgentTables?.length || 0,
-        relationshipsDeleted: environment.dataAgentRelations?.length || 0,
+        tablesDeleted: environment.tables?.length || 0,
+        relationshipsDeleted: environment.relations?.length || 0,
         vaultKeyDeleted: !!environment.vaultKey
       }
     });
@@ -143,7 +143,7 @@ export async function GET(
     const environment = await (prisma.environment as any).findUnique({
       where: { id: environmentId },
       include: {
-        dataAgentTables: {
+        tables: {
           include: {
             columns: {
               orderBy: {
@@ -161,7 +161,7 @@ export async function GET(
             tableName: 'asc'
           }
         },
-        dataAgentRelations: {
+        relations: {
           include: {
             sourceTable: true,
             targetTable: true
@@ -172,8 +172,8 @@ export async function GET(
         },
         _count: {
           select: {
-            dataAgentTables: true,
-            dataAgentRelations: true
+            tables: true,
+            relations: true
           }
         }
       }
