@@ -104,13 +104,23 @@ export default function RelationshipDiagram({
             const midY = (sourcePoint.y + targetPoint.y) / 2;
             const curvature = 50;
             
+            // Check if this relationship is connected to the selected table
+            const isHighlighted = selectedTable && 
+              (relationship.sourceTableId === selectedTable || relationship.targetTableId === selectedTable);
+            
+            // Determine colors based on verification and selection state
+            const baseColor = relationship.isVerified ? "#10b981" : "#f59e0b";
+            const strokeColor = isHighlighted ? "#3b82f6" : (selectedTable ? "#6b7280" : baseColor);
+            const strokeWidth = isHighlighted ? "3" : "2";
+            const opacity = selectedTable && !isHighlighted ? 0.3 : 1;
+            
             return (
-              <g key={relationship.id}>
+              <g key={relationship.id} style={{ opacity }}>
                 {/* Connection line */}
                 <path
                   d={`M ${sourcePoint.x} ${sourcePoint.y} Q ${midX} ${midY - curvature} ${targetPoint.x} ${targetPoint.y}`}
-                  stroke={relationship.isVerified ? "#10b981" : "#f59e0b"}
-                  strokeWidth="2"
+                  stroke={strokeColor}
+                  strokeWidth={strokeWidth}
                   fill="none"
                   strokeDasharray={relationship.isVerified ? "none" : "5,5"}
                 />
@@ -118,7 +128,7 @@ export default function RelationshipDiagram({
                 {/* Arrowhead */}
                 <polygon
                   points={`${targetPoint.x},${targetPoint.y} ${targetPoint.x - 8},${targetPoint.y - 4} ${targetPoint.x - 8},${targetPoint.y + 4}`}
-                  fill={relationship.isVerified ? "#10b981" : "#f59e0b"}
+                  fill={strokeColor}
                 />
                 
                 {/* Relationship type label */}
@@ -128,6 +138,7 @@ export default function RelationshipDiagram({
                   textAnchor="middle"
                   className="text-xs fill-gray-600 dark:fill-gray-300"
                   fontSize="10"
+                  style={{ opacity: selectedTable && !isHighlighted ? 0.5 : 1 }}
                 >
                   {getRelationshipType(relationship.relationshipType)}
                 </text>
@@ -140,6 +151,7 @@ export default function RelationshipDiagram({
                     textAnchor="middle"
                     className="text-xs fill-gray-500 dark:fill-gray-400"
                     fontSize="8"
+                    style={{ opacity: selectedTable && !isHighlighted ? 0.5 : 1 }}
                   >
                     {Math.round(relationship.confidence * 100)}%
                   </text>
@@ -156,17 +168,29 @@ export default function RelationshipDiagram({
               r => r.sourceTableId === table.id || r.targetTableId === table.id
             );
             
+            // Check if this table is connected to the selected table
+            const isConnected = selectedTable && relatedRelationships.some(
+              r => (r.sourceTableId === selectedTable && r.targetTableId === table.id) ||
+                   (r.targetTableId === selectedTable && r.sourceTableId === table.id)
+            );
+            
+            // Determine table styling based on selection state
+            const opacity = selectedTable && !isSelected && !isConnected ? 0.4 : 1;
+            const fillColor = isSelected ? "#1e40af" : (isConnected ? "#059669" : "#374151");
+            const strokeColor = isSelected ? "#3b82f6" : (isConnected ? "#10b981" : "#6b7280");
+            const strokeWidth = isSelected ? "2" : (isConnected ? "2" : "1");
+            
             return (
-              <g key={table.id}>
+              <g key={table.id} style={{ opacity }}>
                 {/* Table rectangle */}
                 <rect
                   x={pos.x}
                   y={pos.y}
                   width={tableWidth}
                   height={tableHeight}
-                  fill={isSelected ? "#1e40af" : "#374151"}
-                  stroke={isSelected ? "#3b82f6" : "#6b7280"}
-                  strokeWidth={isSelected ? "2" : "1"}
+                  fill={fillColor}
+                  stroke={strokeColor}
+                  strokeWidth={strokeWidth}
                   rx="8"
                   className="cursor-pointer"
                   onClick={() => setSelectedTable(isSelected ? null : table.id)}
