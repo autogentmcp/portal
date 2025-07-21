@@ -17,6 +17,7 @@ model User {
   updatedAt    DateTime      @updatedAt
   apiKeys      ApiKey[]
   applications Application[]
+  dataAgents   DataAgent[]
 
   @@map("users")
 }
@@ -42,6 +43,7 @@ model Application {
   endpoints              Endpoint[]
   environments           Environment[]
   healthCheckLogs        HealthCheckLog[]
+  dataAgents             DataAgent[]
 
   @@map("applications")
 }
@@ -56,14 +58,23 @@ model Environment {
   lastHealthCheckAt    DateTime?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
-  applicationId        String
+  environmentType      String               @default("APPLICATION") // APPLICATION, DATA_AGENT
+  applicationId        String?              // Optional - only for APPLICATION type
+  dataAgentId          String?              // Optional - only for DATA_AGENT type
+  connectionConfig     Json?                // Connection config for DATA_AGENT environments
+  vaultKey             String?              // Vault key for storing sensitive data
+  lastConnectedAt      DateTime?            // Last connection time for DATA_AGENT environments
   apiKeys              ApiKey[]
   endpoints            Endpoint[]
   healthCheckLogs      HealthCheckLog[]
   security             EnvironmentSecurity?
-  application          Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  dataAgents           DataAgent[]
+  tables               DataAgentTable[]
+  relations            DataAgentRelation[]
+  application          Application?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  dataAgent            DataAgent?           @relation("DataAgentEnvironments", fields: [dataAgentId], references: [id], onDelete: Cascade)
 
-  @@unique([applicationId, name])
+  @@unique([environmentType, applicationId, dataAgentId, name]) // Ensure unique names per context
   @@map("environments")
 }
 
@@ -150,4 +161,102 @@ model HealthCheckLog {
   environment         Environment? @relation(fields: [environmentId], references: [id])
 
   @@map("health_check_logs")
+}
+
+// Data Agent Models
+model DataAgent {
+  id                     String              @id @default(cuid())
+  name                   String
+  description            String?
+  connectionType         String              // "bigquery", "databricks", "postgres", "mysql", "sqlite", etc.
+  connectionConfig       Json                // Store connection details (encrypted in vault)
+  status                 String              @default("INACTIVE") // ACTIVE, INACTIVE, CONNECTING, ERROR
+  lastConnectedAt        DateTime?
+  relationshipAnalysis   String?             // AI-generated relationship analysis
+  relationshipAnalyzedAt DateTime?           // When relationships were last analyzed
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  userId                 String
+  applicationId          String              // Link to application
+  environmentId          String?             // Link to environment (optional for global agents)
+  vaultKey               String?             // Reference to vault-stored credentials
+  user                   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application            Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  environment            Environment?        @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  environments           Environment[]       @relation("DataAgentEnvironments") // One-to-many relationship
+  tables                 DataAgentTable[]
+  relations              DataAgentRelation[]
+
+  @@unique([applicationId, environmentId, name]) // Ensure unique names per environment
+  @@map("data_agents")
+}
+
+model DataAgentTable {
+  id                String                @id @default(cuid())
+  dataAgentId       String
+  environmentId     String
+  tableName         String
+  schemaName        String?               // For databases that support schemas
+  displayName       String?               // User-friendly name
+  description       String?               // AI-generated description
+  rowCount          Int?                  // Estimated row count
+  isActive          Boolean               @default(true)
+  analysisStatus    String                @default("PENDING") // PENDING, ANALYZING, COMPLETED, FAILED
+  analysisResult    Json?                 // AI analysis results
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  dataAgent         DataAgent             @relation(fields: [dataAgentId], references: [id], onDelete: Cascade)
+  environment       Environment           @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  columns           DataAgentTableColumn[]
+  sourceRelations   DataAgentRelation[]   @relation("SourceTable")
+  targetRelations   DataAgentRelation[]   @relation("TargetTable")
+
+  @@unique([dataAgentId, environmentId, tableName, schemaName])
+  @@map("data_agent_tables")
+}
+
+model DataAgentTableColumn {
+  id              String           @id @default(cuid())
+  tableId         String
+  columnName      String
+  dataType        String
+  isNullable      Boolean          @default(true)
+  defaultValue    String?
+  comment         String?
+  isIndexed       Boolean          @default(false)
+  isPrimaryKey    Boolean          @default(false)
+  isForeignKey    Boolean          @default(false)
+  referencedTable String?
+  referencedColumn String?
+  aiDescription   String?          // AI-generated description
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  table           DataAgentTable   @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, columnName])
+  @@map("data_agent_table_columns")
+}
+
+model DataAgentRelation {
+  id              String           @id @default(cuid())
+  dataAgentId     String
+  environmentId   String
+  sourceTableId   String
+  targetTableId   String
+  relationshipType String          // "one_to_one", "one_to_many", "many_to_many"
+  sourceColumn    String
+  targetColumn    String
+  description     String?          // AI-generated description
+  example         String?          // Example query or use case
+  confidence      Float?           // AI confidence score (0-1)
+  isVerified      Boolean          @default(false) // Admin verified
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  dataAgent       DataAgent        @relation(fields: [dataAgentId], references: [id], onDelete: Cascade)
+  environment     Environment      @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  sourceTable     DataAgentTable   @relation("SourceTable", fields: [sourceTableId], references: [id], onDelete: Cascade)
+  targetTable     DataAgentTable   @relation("TargetTable", fields: [targetTableId], references: [id], onDelete: Cascade)
+
+  @@unique([dataAgentId, environmentId, sourceTableId, targetTableId, sourceColumn, targetColumn])
+  @@map("data_agent_relations")
 }

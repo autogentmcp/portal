@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
       activeApplications,
       totalUsers,
       totalApiKeys,
+      totalDataAgents,
+      activeDataAgents,
     ] = await Promise.all([
       prisma.application.count(),
       prisma.application.count({
@@ -27,6 +29,10 @@ export async function GET(request: NextRequest) {
       prisma.apiKey.count({
         where: { status: 'ACTIVE' },
       }),
+      prisma.dataAgent.count(),
+      prisma.dataAgent.count({
+        where: { status: 'ACTIVE' },
+      }),
     ])
 
     const stats = {
@@ -34,6 +40,8 @@ export async function GET(request: NextRequest) {
       activeApplications,
       totalUsers,
       totalApiKeys,
+      totalDataAgents,
+      activeDataAgents,
     }
 
     return NextResponse.json(stats)
