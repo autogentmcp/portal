@@ -15,38 +15,66 @@ export async function POST(
 
     const { id } = await params
 
-    // Get data agent
+    // Get data agent with its environments
     const dataAgent = await prisma.dataAgent.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        // Get associated environments
+        environments: {
+          where: {
+            environmentType: 'DATA_AGENT'
+          },
+          orderBy: {
+            createdAt: 'desc'
+          },
+          take: 1 // Get the most recent environment
+        }
+      }
     })
 
     if (!dataAgent) {
       return NextResponse.json({ error: 'Data agent not found' }, { status: 404 })
     }
 
-    // Get credentials from vault
+    if (!dataAgent.environments || dataAgent.environments.length === 0) {
+      return NextResponse.json({ 
+        error: 'No environment configured for this data agent. Please create an environment first.' 
+      }, { status: 400 })
+    }
+
+    const environment = dataAgent.environments[0]
+
+    // Get credentials from vault using environment's vaultKey
     let credentials = null
-    if (dataAgent.vaultKey) {
+    if (environment.vaultKey) {
       try {
         const { SecretManager } = await import('@/lib/secrets')
         const secretManager = SecretManager.getInstance()
         await secretManager.init()
         
         if (secretManager.hasProvider()) {
-          credentials = await secretManager.getCredentials(dataAgent.vaultKey)
+          credentials = await secretManager.getCredentials(environment.vaultKey)
         }
       } catch (error) {
+        console.error('Failed to retrieve credentials:', error)
         return NextResponse.json(
-          { error: 'Failed to retrieve connection credentials' },
+          { error: 'Failed to retrieve connection credentials from vault' },
           { status: 500 }
         )
       }
     }
 
-    // Test connection based on connection type
+    if (!credentials) {
+      return NextResponse.json(
+        { error: 'No credentials found for this data agent. Please reconfigure the environment.' },
+        { status: 400 }
+      )
+    }
+
+    // Test connection using environment's connection config and retrieved credentials
     const connectionResult = await testConnection(
       dataAgent.connectionType, 
-      dataAgent.connectionConfig, 
+      environment.connectionConfig, 
       credentials
     )
 
@@ -55,15 +83,33 @@ export async function POST(
       await prisma.dataAgent.update({
         where: { id },
         data: {
+          status: 'ACTIVE'
+        }
+      })
+
+      // Update environment status and last connected time
+      await prisma.environment.update({
+        where: { id: environment.id },
+        data: {
           status: 'ACTIVE',
+          healthStatus: 'HEALTHY',
           lastConnectedAt: new Date()
         }
       })
     } else {
+      // Update both data agent and environment status on failure
       await prisma.dataAgent.update({
         where: { id },
         data: {
           status: 'ERROR'
+        }
+      })
+
+      await prisma.environment.update({
+        where: { id: environment.id },
+        data: {
+          status: 'ERROR',
+          healthStatus: 'UNHEALTHY'
         }
       })
     }
@@ -287,45 +333,165 @@ async function testDatabricksConnection(config: any, credentials: any) {
 // IBM DB2 connection test
 async function testDB2Connection(config: any, credentials: any): Promise<{ success: boolean; message: string; error?: string }> {
   try {
-    // Using ibm_db package for DB2 connectivity
-    const ibmdb = require('ibm_db')
+    // Try to import ibm_db - this is a native module that can be tricky in Next.js
+    let ibmdb: any
+    try {
+      console.log('Attempting to import ibm_db...')
+      const ibmdbModule = await import('ibm_db')
+      console.log('ibm_db module imported successfully:', typeof ibmdbModule)
+      
+      // ibm_db exports itself as a function, not an object with methods
+      // Check if it's the default export or the module itself
+      if (typeof ibmdbModule === 'function') {
+        ibmdb = ibmdbModule
+      } else if (ibmdbModule.default && typeof ibmdbModule.default === 'function') {
+        ibmdb = ibmdbModule.default
+      } else if (ibmdbModule.open && typeof ibmdbModule.open === 'function') {
+        ibmdb = ibmdbModule
+      } else {
+        console.error('Unexpected ibm_db module structure:', Object.keys(ibmdbModule))
+        return {
+          success: false,
+          message: 'IBM DB2 connection failed',
+          error: 'DB2 driver has unexpected structure. Please check the ibm_db installation.'
+        }
+      }
+      
+      console.log('ibm_db configured, type:', typeof ibmdb)
+      
+      // Check if the main functions exist
+      if (!ibmdb || typeof ibmdb.open !== 'function') {
+        console.error('ibm_db.open is not a function. Available methods:', Object.keys(ibmdb || {}))
+        return {
+          success: false,
+          message: 'IBM DB2 connection failed',
+          error: 'DB2 driver not properly initialized. The ibm_db package may not be correctly installed.'
+        }
+      }
+    } catch (importError) {
+      console.error('Failed to import ibm_db:', importError)
+      return {
+        success: false,
+        message: 'IBM DB2 connection failed',
+        error: `DB2 driver not available: ${importError instanceof Error ? importError.message : 'Unknown import error'}. Please ensure ibm_db package is properly installed and configured.`
+      }
+    }
+
+    // Build connection string with additional parameters to handle connection issues
+    const host = config.hostname || config.host;
+    const finalHost = host === 'localhost' ? '127.0.0.1' : host;
+    const port = config.port || 50000;
     
-    const connectionString = `DATABASE=${config.database};HOSTNAME=${config.hostname || config.host};PORT=${config.port || 50000};PROTOCOL=TCPIP;UID=${credentials?.username || credentials?.user};PWD=${credentials?.password};`
+    let connStr = `DATABASE=${config.database};HOSTNAME=${finalHost};PORT=${port};PROTOCOL=TCPIP;UID=${credentials?.username || credentials?.user};PWD=${credentials?.password};`
+    
+    // Add additional connection parameters to help with connectivity issues
+    connStr += 'CONNECTTIMEOUT=10;QUERYTIMEOUT=30;'
+    
+    // Force IPv4 if connecting to localhost to avoid IPv6 issues
+    if (finalHost === '127.0.0.1' || finalHost === 'localhost') {
+      connStr += 'TCPKEEPALIVE=1;'
+    }
+    
+    console.log(`DB2 connection string created for ${finalHost}:${port} (password hidden)`)
     
     return new Promise((resolve) => {
-      ibmdb.open(connectionString, (err: any, conn: any) => {
-        if (err) {
-          resolve({
-            success: false,
-            message: 'IBM DB2 connection failed',
-            error: err.message || 'Unknown error'
-          })
-        } else {
-          // Test with a simple query
-          conn.query('SELECT 1 FROM SYSIBM.SYSDUMMY1', (err: any, result: any) => {
-            conn.close(() => {})
+      // Set a timeout for the connection attempt
+      const connectionTimeout = setTimeout(() => {
+        console.log('DB2 connection timed out')
+        resolve({
+          success: false,
+          message: 'IBM DB2 connection failed',
+          error: `Connection timeout: Unable to connect to DB2 database '${config.database}' on ${finalHost}:${port} within 15 seconds. Please check if the server is running and accessible.`
+        })
+      }, 15000) // 15 second timeout
+      
+      try {
+        ibmdb.open(connStr, (err: any, conn: any) => {
+          clearTimeout(connectionTimeout) // Clear timeout on response
+          
+          if (err) {
+            console.error('DB2 connection error:', err)
             
-            if (err) {
-              resolve({
-                success: false,
-                message: 'IBM DB2 query test failed',
-                error: err.message || 'Unknown error'
-              })
-            } else {
-              resolve({
-                success: true,
-                message: 'IBM DB2 connection successful'
-              })
+            let errorMessage = err.message || 'Failed to connect to DB2 database'
+            
+            // Provide specific guidance for common DB2 connection errors
+            if (err.message && err.message.includes('SQL30081N')) {
+              if (err.message.includes('recv')) {
+                errorMessage = `DB2 connection failed (SQL30081N): Cannot establish connection to the database server.
+
+This usually indicates one of the following issues:
+1. **DB2 server not running**: The DB2 database server is not started on ${finalHost}:${port}
+2. **Wrong port**: DB2 server might be running on a different port (common ports: 50000, 25000, 60000)
+3. **Wrong hostname**: The server might be on a different host than '${finalHost}'
+4. **Database doesn't exist**: The database '${config.database}' might not exist on the server
+5. **Firewall blocking**: Network firewall may be blocking port ${port}
+
+To troubleshoot:
+- Verify DB2 server is running: db2 list db directory
+- Check if port is open: telnet ${finalHost} ${port}
+- Verify database exists and is cataloged
+- Check DB2 instance and database are started
+
+Original error: ${err.message}`
+              } else {
+                errorMessage = `DB2 communication error (SQL30081N): Network connectivity issue.
+
+Please verify:
+1. Server hostname/IP: ${finalHost}
+2. Port number: ${port}  
+3. Database name: ${config.database}
+4. Network connectivity and firewall settings
+
+Original error: ${err.message}`
+              }
+            } else if (err.message && (err.message.includes('SQL30082N') || err.message.includes('security'))) {
+              errorMessage = `DB2 authentication failed: Invalid username or password. Please verify your credentials.
+
+Original error: ${err.message}`
             }
-          })
-        }
-      })
+            
+            resolve({
+              success: false,
+              message: 'IBM DB2 connection failed',
+              error: errorMessage
+            })
+          } else {
+            // Test basic query
+            conn.query('SELECT 1 FROM SYSIBM.SYSDUMMY1', (err2: any, result: any) => {
+              conn.close()
+              clearTimeout(connectionTimeout) // Clear timeout on successful query
+              
+              if (err2) {
+                resolve({
+                  success: false,
+                  message: 'IBM DB2 query test failed',
+                  error: err2.message || 'Failed to query DB2 database'
+                })
+              } else {
+                resolve({
+                  success: true,
+                  message: `Successfully connected to IBM DB2 database '${config.database}' on ${finalHost}:${port}`
+                })
+              }
+            })
+          }
+        })
+      } catch (openError) {
+        clearTimeout(connectionTimeout) // Clear timeout on exception
+        console.error('DB2 open error:', openError)
+        resolve({
+          success: false,
+          message: 'IBM DB2 connection failed',
+          error: `Failed to open DB2 connection: ${openError instanceof Error ? openError.message : 'Unknown error'}. Please check your connection configuration.`
+        })
+      }
     })
   } catch (error) {
+    console.error('DB2 connection error:', error)
     return {
       success: false,
       message: 'IBM DB2 connection failed',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Failed to connect to DB2 database'
     }
   }
 }

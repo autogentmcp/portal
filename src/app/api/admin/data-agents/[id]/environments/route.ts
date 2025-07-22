@@ -41,13 +41,16 @@ export async function POST(
       
       if (secretManager.hasProvider()) {
         vaultKey = `data-agent-${dataAgentId}-env-${crypto.randomUUID()}-${Date.now()}`;
-        await secretManager.storeCredentials(vaultKey, {
+        
+        const credentialsToStore = {
           host: connectionConfig.host,
           port: String(connectionConfig.port || '5432'),
           database: connectionConfig.database,
           username: String(connectionConfig.username || ''),
           password: String(connectionConfig.password || '')
-        });
+        };
+        
+        await secretManager.storeCredentials(vaultKey, credentialsToStore);
         
         // Store config without sensitive data
         finalConnectionConfig = {

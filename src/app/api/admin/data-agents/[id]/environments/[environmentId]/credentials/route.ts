@@ -150,15 +150,23 @@ export async function GET(
         await secretManager.init();
         
         if (secretManager.hasProvider()) {
+          console.log(`Attempting to retrieve credentials for vault key: ${environment.vaultKey}`);
           const credentials = await secretManager.getCredentials(environment.vaultKey);
+          console.log(`Retrieved credentials:`, credentials ? 'Found' : 'Not found');
           if (credentials) {
+            console.log(`Credential keys:`, Object.keys(credentials));
             hasCredentials = true;
             username = credentials.username || credentials.user || '';
+            console.log(`Extracted username: "${username}"`);
           }
+        } else {
+          console.log('No secret provider available');
         }
       } catch (error) {
         console.error('Error retrieving credentials:', error);
       }
+    } else {
+      console.log('No vault key found for environment');
     }
 
     return NextResponse.json({ 

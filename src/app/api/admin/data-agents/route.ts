@@ -88,37 +88,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find user's first application or create a default one
-    let application = await prisma.application.findFirst({
-      where: { userId: user.id }
-    })
-
-    if (!application) {
-      // Create a default application for the user
-      const generateAppKey = () => {
-        return 'app_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-      }
-
-      application = await prisma.application.create({
-        data: {
-          name: 'Default Application',
-          description: 'Default application for data agents',
-          appKey: generateAppKey(),
-          status: 'ACTIVE',
-          userId: user.id,
-        }
-      })
-    }
-
     // Create the data agent (connection details will be added later via environments)
     const dataAgent = await prisma.dataAgent.create({
       data: {
         name,
         description,
         connectionType,
-        connectionConfig: {}, // Empty config - will be populated via environments
         userId: user.id,
-        applicationId: application.id,
         status: 'INACTIVE' // Will be activated when first environment is created
       }
     })

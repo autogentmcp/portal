@@ -112,7 +112,7 @@ export async function POST(
               targetTableId: toTable.id,
               sourceColumn: rel.sourceColumn,
               targetColumn: rel.targetColumn,
-              relationshipType: rel.relationshipType,
+              relationshipType: relationshipType,
               description: rel.description,
               example: rel.example,
               confidence: rel.confidence,
