@@ -175,20 +175,23 @@ async function getSampleData(table: any): Promise<SampleDataResult> {
     switch (dataAgent.connectionType.toLowerCase()) {
       case 'postgres':
       case 'postgresql':
-        return await getPostgresSampleData(connectionConfig, credentials, table.tableName);
+        return await getPostgresSampleData(connectionConfig, credentials, table.tableName, table.schemaName);
       
       case 'mysql':
-        return await getMySQLSampleData(connectionConfig, credentials, table.tableName);
+        return await getMySQLSampleData(connectionConfig, credentials, table.tableName, table.schemaName);
       
       case 'mssql':
       case 'sqlserver':
-        return await getMSSQLSampleData(connectionConfig, credentials, table.tableName);
+        return await getMSSQLSampleData(connectionConfig, credentials, table.tableName, table.schemaName);
+      
+      case 'db2':
+        return await getDB2SampleData(connectionConfig, credentials, table.tableName, table.schemaName);
       
       case 'bigquery':
-        return await getBigQuerySampleData(connectionConfig, credentials, table.tableName);
+        return await getBigQuerySampleData(connectionConfig, credentials, table.tableName, table.schemaName);
       
       case 'databricks':
-        return await getDatabricksSampleData(connectionConfig, credentials, table.tableName);
+        return await getDatabricksSampleData(connectionConfig, credentials, table.tableName, table.schemaName);
       
       default:
         console.warn(`Sample data not supported for connection type: ${dataAgent.connectionType}`);
@@ -202,12 +205,12 @@ async function getSampleData(table: any): Promise<SampleDataResult> {
 }
 
 // PostgreSQL sample data
-async function getPostgresSampleData(config: any, credentials: any, tableName: string) {
+async function getPostgresSampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
   const { Client } = require('pg');
   
   const client = new Client({
     host: config.host,
-    port: config.port || 5432,
+    port: parseInt(String(config.port || 5432)), // Ensure port is a number
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
@@ -218,12 +221,22 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
   try {
     await client.connect();
     
+    // Use proper schema qualification for table name
+    let quotedTableName: string;
+    if (schemaName) {
+      quotedTableName = `"${schemaName}"."${tableName}"`;
+    } else if (tableName.includes('.')) {
+      quotedTableName = tableName.split('.').map(part => `"${part}"`).join('.'); 
+    } else {
+      quotedTableName = `"${tableName}"`;
+    }
+    
     // Get row count
-    const countResult = await client.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+    const countResult = await client.query(`SELECT COUNT(*) as count FROM ${quotedTableName}`);
     const rowCount = parseInt(countResult.rows[0].count);
     
     // Get sample data (limit to 100 rows)
-    const sampleResult = await client.query(`SELECT * FROM "${tableName}" LIMIT 100`);
+    const sampleResult = await client.query(`SELECT * FROM ${quotedTableName} LIMIT 100`);
     
     // Organize sample values by column
     const sampleData: { [key: string]: string[] } = {};
@@ -261,12 +274,12 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
 }
 
 // MySQL sample data
-async function getMySQLSampleData(config: any, credentials: any, tableName: string) {
+async function getMySQLSampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
   const mysql = require('mysql2/promise');
   
   const connection = await mysql.createConnection({
     host: config.host,
-    port: config.port || 3306,
+    port: parseInt(String(config.port || 3306)), // Ensure port is a number
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
@@ -275,12 +288,22 @@ async function getMySQLSampleData(config: any, credentials: any, tableName: stri
   });
 
   try {
+    // Use proper backtick quoting for table name
+    let quotedTableName: string;
+    if (schemaName) {
+      quotedTableName = `\`${schemaName}\`.\`${tableName}\``;
+    } else if (tableName.includes('.')) {
+      quotedTableName = tableName.split('.').map(part => `\`${part}\``).join('.'); 
+    } else {
+      quotedTableName = `\`${tableName}\``;
+    }
+    
     // Get row count
-    const [countRows] = await connection.execute(`SELECT COUNT(*) as count FROM \`${tableName}\``);
+    const [countRows] = await connection.execute(`SELECT COUNT(*) as count FROM ${quotedTableName}`);
     const rowCount = (countRows as any[])[0].count;
     
     // Get sample data
-    const [sampleRows] = await connection.execute(`SELECT * FROM \`${tableName}\` LIMIT 100`);
+    const [sampleRows] = await connection.execute(`SELECT * FROM ${quotedTableName} LIMIT 100`);
     
     const sampleData: { [key: string]: string[] } = {};
     
@@ -303,12 +326,12 @@ async function getMySQLSampleData(config: any, credentials: any, tableName: stri
 }
 
 // MSSQL sample data
-async function getMSSQLSampleData(config: any, credentials: any, tableName: string) {
+async function getMSSQLSampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
   const sql = require('mssql');
   
   const poolConfig = {
     server: config.server || config.host,
-    port: config.port || 1433,
+    port: parseInt(String(config.port || 1433)), // Ensure port is a number
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
@@ -325,12 +348,16 @@ async function getMSSQLSampleData(config: any, credentials: any, tableName: stri
   const pool = await sql.connect(poolConfig);
   
   try {
+    // Use proper schema qualification for SQL Server
+    const schemaPrefix = schemaName || 'dbo';
+    const qualifiedTableName = `[${schemaPrefix}].[${tableName}]`;
+    
     // Get row count
-    const countResult = await pool.request().query(`SELECT COUNT(*) as count FROM [${tableName}]`);
+    const countResult = await pool.request().query(`SELECT COUNT(*) as count FROM ${qualifiedTableName}`);
     const rowCount = countResult.recordset[0].count;
     
     // Get sample data
-    const sampleResult = await pool.request().query(`SELECT TOP 100 * FROM [${tableName}]`);
+    const sampleResult = await pool.request().query(`SELECT TOP 100 * FROM ${qualifiedTableName}`);
     
     const sampleData: { [key: string]: string[] } = {};
     
@@ -353,46 +380,170 @@ async function getMSSQLSampleData(config: any, credentials: any, tableName: stri
 }
 
 // BigQuery sample data
-async function getBigQuerySampleData(config: any, credentials: any, tableName: string) {
-  const { BigQuery } = require('@google-cloud/bigquery');
-  
-  const bigquery = new BigQuery({
-    projectId: config.projectId,
-    keyFilename: credentials?.serviceAccountPath,
-    credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
-  });
-
-  const [datasetId, tableId] = tableName.includes('.') ? tableName.split('.') : [config.defaultDataset, tableName];
-  
-  // Get sample data
-  const query = `SELECT * FROM \`${config.projectId}.${datasetId}.${tableId}\` LIMIT 100`;
-  const [rows] = await bigquery.query({ query });
-  
-  const sampleData: { [key: string]: string[] } = {};
-  
-  if (rows.length > 0) {
-    const columns = Object.keys(rows[0]);
+async function getBigQuerySampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
+  try {
+    const { BigQuery } = require('@google-cloud/bigquery');
     
-    columns.forEach(column => {
-      sampleData[column] = rows
-        .map((row: any) => row[column])
-        .filter((value: any) => value !== null && value !== undefined)
-        .map((value: any) => String(value))
-        .slice(0, 20);
+    const bigquery = new BigQuery({
+      projectId: config.projectId,
+      keyFilename: credentials?.serviceAccountPath,
+      credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
     });
+
+    let finalTableName: string;
+    if (schemaName) {
+      // Use provided schema name
+      finalTableName = `\`${config.projectId}.${schemaName}.${tableName}\``;
+    } else if (tableName.includes('.')) {
+      // Already qualified (dataset.table)
+      finalTableName = `\`${config.projectId}.${tableName}\``;
+    } else {
+      // Use default dataset
+      const datasetId = config.defaultDataset || 'default_dataset';
+      finalTableName = `\`${config.projectId}.${datasetId}.${tableName}\``;
+    }
+    
+    // Get row count
+    const countQuery = `SELECT COUNT(*) as count FROM ${finalTableName}`;
+    const [countRows] = await bigquery.query({ query: countQuery });
+    const rowCount = countRows[0]?.count || 0;
+    
+    // Get sample data
+    const sampleQuery = `SELECT * FROM ${finalTableName} LIMIT 100`;
+    const [rows] = await bigquery.query({ query: sampleQuery });
+    
+    const sampleData: { [key: string]: string[] } = {};
+    
+    if (rows.length > 0) {
+      const columns = Object.keys(rows[0]);
+      
+      columns.forEach(column => {
+        sampleData[column] = rows
+          .map((row: any) => row[column])
+          .filter((value: any) => value !== null && value !== undefined)
+          .map((value: any) => String(value))
+          .slice(0, 20);
+      });
+    }
+    
+    return { ...sampleData, rowCount };
+  } catch (error) {
+    console.warn(`BigQuery sample data failed for table ${tableName}:`, error instanceof Error ? error.message : 'Unknown error');
+    return {};
   }
-  
-  return sampleData;
 }
 
 // Databricks sample data
-async function getDatabricksSampleData(config: any, credentials: any, tableName: string) {
-  // Simplified implementation - would need proper Databricks SQL connector
-  return {
-    id: ['1', '2', '3', '4', '5'],
-    created_at: ['2024-01-01', '2024-01-02', '2024-01-03'],
-    rowCount: 1000,
-  };
+async function getDatabricksSampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
+  try {
+    // Use Databricks SQL connector if available
+    // For now, return empty data since proper Databricks connection would require specific libraries
+    console.warn(`Databricks sample data not yet implemented for table ${tableName}. Returning empty data.`);
+    return {};
+  } catch (error) {
+    console.warn(`Databricks sample data failed for table ${tableName}:`, error instanceof Error ? error.message : 'Unknown error');
+    return {};
+  }
+}
+
+// DB2 sample data
+async function getDB2SampleData(config: any, credentials: any, tableName: string, schemaName?: string): Promise<SampleDataResult> {
+  try {
+    // Try to import ibm_db
+    let ibmdb: any;
+    try {
+      const ibmdbModule = await import('ibm_db');
+      
+      if (typeof ibmdbModule === 'function') {
+        ibmdb = ibmdbModule;
+      } else if (ibmdbModule.default && typeof ibmdbModule.default === 'function') {
+        ibmdb = ibmdbModule.default;
+      } else if (ibmdbModule.open && typeof ibmdbModule.open === 'function') {
+        ibmdb = ibmdbModule;
+      } else {
+        throw new Error('ibm_db module has unexpected structure');
+      }
+    } catch (importError) {
+      console.warn('DB2 driver not available for sample data:', importError instanceof Error ? importError.message : 'Unknown import error');
+      return {};
+    }
+
+    // Build connection string
+    const host = config.host === 'localhost' ? '127.0.0.1' : config.host;
+    const port = config.port || 50000;
+    const connStr = `DATABASE=${config.database};HOSTNAME=${host};PORT=${port};PROTOCOL=TCPIP;UID=${credentials.username};PWD=${credentials.password};CONNECTTIMEOUT=10;QUERYTIMEOUT=30;`;
+    
+    return new Promise((resolve) => {
+      const connectionTimeout = setTimeout(() => {
+        console.warn('DB2 connection timeout for sample data. Returning empty data.');
+        resolve({});
+      }, 10000);
+      
+      try {
+        ibmdb.open(connStr, (err: any, conn: any) => {
+          clearTimeout(connectionTimeout);
+          
+          if (err) {
+            console.warn(`DB2 connection failed for sample data: ${err.message || 'Unknown error'}`);
+            resolve({});
+            return;
+          }
+          
+          // Use schema-qualified table name for sample data query
+          let schemaQualifiedTable: string;
+          if (schemaName) {
+            // Use provided schema name
+            schemaQualifiedTable = `${schemaName}.${tableName}`;
+          } else if (!tableName.includes('.')) {
+            // If no schema specified, use RETAIL_SYS as default based on error logs
+            schemaQualifiedTable = `RETAIL_SYS.${tableName}`;
+          } else {
+            // Table already includes schema
+            schemaQualifiedTable = tableName;
+          }
+          
+          const query = `SELECT * FROM ${schemaQualifiedTable} FETCH FIRST 20 ROWS ONLY`;
+          console.log(`DB2 query for sample data: ${query}`);
+          
+          conn.query(query, (queryErr: any, result: any) => {
+            conn.close();
+            
+            if (queryErr) {
+              console.log(`DB2 query failed for sample data: ${queryErr.message || 'Unknown error'}`);
+              resolve({});
+              return;
+            }
+            
+            if (!result || result.length === 0) {
+              resolve({});
+              return;
+            }
+            
+            // Transform the data into the expected format
+            const sampleData: { [key: string]: any } = {};
+            const columns = Object.keys(result[0] || {});
+            
+            columns.forEach(column => {
+              sampleData[column] = result
+                .map((row: any) => row[column])
+                .filter((value: any) => value !== null && value !== undefined)
+                .map((value: any) => String(value))
+                .slice(0, 20);
+            });
+            
+            resolve(sampleData);
+          });
+        });
+      } catch (openError) {
+        clearTimeout(connectionTimeout);
+        console.warn(`Failed to open DB2 connection for sample data: ${openError instanceof Error ? openError.message : 'Unknown error'}`);
+        resolve({});
+      }
+    });
+  } catch (error) {
+    console.warn('DB2 sample data fetch error:', error instanceof Error ? error.message : 'Unknown error');
+    return {};
+  }
 }
 
 

@@ -160,6 +160,12 @@ function DataAgentDetailPageContent() {
       // Prepare the payload with connection test result status
       const payload = {
         ...newEnvironment,
+        // Merge credentials into connectionConfig for the API
+        connectionConfig: {
+          ...newEnvironment.connectionConfig,
+          username: newEnvironment.credentials.username,
+          password: newEnvironment.credentials.password
+        },
         connectionTested: creationConnectionTestResult?.success || false
       };
 

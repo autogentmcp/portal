@@ -22,7 +22,7 @@ export async function POST(
     }
 
     // Get data agent
-    const dataAgent = await prisma.dataAgent.findUnique({
+    const dataAgent = await (prisma.dataAgent as any).findUnique({
       where: { id },
     });
 
@@ -79,6 +79,9 @@ export async function POST(
             isNullable: field.isNullable,
             isPrimaryKey: field.isPrimaryKey,
             comment: field.description,
+            isForeignKey: (field as any).isForeignKey || false,
+            referencedTable: (field as any).referencedTable || null,
+            referencedColumn: (field as any).referencedColumn || null,
             tableId: table.id,
           })),
         });
@@ -254,15 +257,50 @@ async function getMySQLTableSchema(config: any, credentials: any, tableName: str
       ORDER BY ORDINAL_POSITION
     `, [tableName, config.database]);
     
+    // Get foreign key constraints for this table
+    const [fkRows] = await connection.execute(`
+      SELECT 
+        kcu.COLUMN_NAME,
+        kcu.REFERENCED_TABLE_NAME,
+        kcu.REFERENCED_COLUMN_NAME,
+        rc.CONSTRAINT_NAME
+      FROM 
+        INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+      INNER JOIN 
+        INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc 
+        ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+      WHERE 
+        kcu.TABLE_SCHEMA = ? AND
+        kcu.TABLE_NAME = ? AND
+        kcu.REFERENCED_TABLE_NAME IS NOT NULL
+    `, [config.database, tableName]);
+
+    // Create foreign key lookup map
+    const fkMap = new Map();
+    (fkRows as any[]).forEach(row => {
+      fkMap.set(row.COLUMN_NAME, {
+        referencedTable: row.REFERENCED_TABLE_NAME,
+        referencedColumn: row.REFERENCED_COLUMN_NAME,
+        constraintName: row.CONSTRAINT_NAME
+      });
+    });
+    
     return {
       description: (tableRows as any[])[0]?.description,
-      fields: (columnRows as any[]).map(row => ({
-        name: row.name,
-        dataType: row.data_type,
-        isNullable: !!row.is_nullable,
-        isPrimaryKey: !!row.is_primary_key,
-        description: row.description,
-      })),
+      fields: (columnRows as any[]).map(row => {
+        const fkInfo = fkMap.get(row.name);
+        return {
+          name: row.name,
+          dataType: row.data_type,
+          isNullable: !!row.is_nullable,
+          isPrimaryKey: !!row.is_primary_key,
+          description: row.description,
+          isForeignKey: !!fkInfo,
+          referencedTable: fkInfo?.referencedTable || null,
+          referencedColumn: fkInfo?.referencedColumn || null,
+          constraintName: fkInfo?.constraintName || null
+        };
+      }),
     };
   } finally {
     await connection.end();
@@ -292,6 +330,7 @@ async function getMSSQLTableSchema(config: any, credentials: any, tableName: str
   const pool = await sql.connect(poolConfig);
   
   try {
+    // Get column information
     const result = await pool.request()
       .input('tableName', sql.NVarChar, tableName)
       .query(`
@@ -311,15 +350,50 @@ async function getMSSQLTableSchema(config: any, credentials: any, tableName: str
         ORDER BY c.ORDINAL_POSITION
       `);
     
+    // Get foreign key constraints for this table
+    const fkResult = await pool.request()
+      .input('tableName', sql.NVarChar, tableName)
+      .query(`
+        SELECT 
+          fk.name AS constraint_name,
+          cp.name AS column_name,
+          rt.name AS referenced_table_name,
+          rcp.name AS referenced_column_name
+        FROM sys.foreign_keys fk
+        INNER JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+        INNER JOIN sys.tables t ON t.object_id = fk.parent_object_id
+        INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
+        INNER JOIN sys.columns cp ON cp.object_id = t.object_id AND cp.column_id = fkc.parent_column_id
+        INNER JOIN sys.columns rcp ON rcp.object_id = rt.object_id AND rcp.column_id = fkc.referenced_column_id
+        WHERE t.name = @tableName
+      `);
+
+    // Create foreign key lookup map
+    const fkMap = new Map();
+    fkResult.recordset.forEach((row: any) => {
+      fkMap.set(row.column_name, {
+        referencedTable: row.referenced_table_name,
+        referencedColumn: row.referenced_column_name,
+        constraintName: row.constraint_name
+      });
+    });
+    
     return {
       description: undefined, // Could be enhanced to get table description
-      fields: result.recordset.map((row: any) => ({
-        name: row.name,
-        dataType: row.data_type,
-        isNullable: !!row.is_nullable,
-        isPrimaryKey: !!row.is_primary_key,
-        description: row.description,
-      })),
+      fields: result.recordset.map((row: any) => {
+        const fkInfo = fkMap.get(row.name);
+        return {
+          name: row.name,
+          dataType: row.data_type,
+          isNullable: !!row.is_nullable,
+          isPrimaryKey: !!row.is_primary_key,
+          description: row.description,
+          isForeignKey: !!fkInfo,
+          referencedTable: fkInfo?.referencedTable || null,
+          referencedColumn: fkInfo?.referencedColumn || null,
+          constraintName: fkInfo?.constraintName || null
+        };
+      }),
     };
   } finally {
     await pool.close();
