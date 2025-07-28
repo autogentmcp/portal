@@ -200,16 +200,29 @@ class LLMService {
     );
     
     try {
+      // Use structured output for better reliability
       const response = await this.client.chat.completions.create({
         model: this.model,
         messages: [
+          {
+            role: 'system',
+            content: this.provider === 'openai' && this.model.includes('gpt-4') 
+              ? 'You are a database expert. Analyze the given column and provide structured information about its purpose, example value, and data pattern.'
+              : 'You are a database expert. You must respond with ONLY valid JSON - no explanatory text, no markdown, no additional commentary. Analyze the given column and return a JSON object with the exact structure requested.',
+          },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        max_tokens: 100, // Very strict limit for brief JSON responses
-        temperature: 0.1, // Lower temperature for more consistent output
+        max_tokens: 150,
+        temperature: 0.1,
+        // Use structured output if the model supports it (OpenAI GPT-4, etc.)
+        ...(this.provider === 'openai' && this.model.includes('gpt-4') ? {
+          response_format: {
+            type: "json_object"
+          }
+        } : {}),
       });
 
       const content = response.choices[0]?.message?.content || '';
@@ -293,15 +306,14 @@ class LLMService {
   }>): Promise<StructuredRelationshipResponse> {
     const prompt = this.buildStructuredRelationshipPrompt(tables);
     
-    // Rough token estimation (4 chars per token average)
-    const estimatedInputTokens = Math.ceil(prompt.length / 4);
-    let maxTokens = 4000;
+    // Use maximum tokens for relationship analysis - we don't want to truncate relationships
+    const maxTokens = 10000; // Maximum allocation for comprehensive relationship capture
     
-    // Adjust max tokens based on input size to leave room for response
-    if (estimatedInputTokens > 2000) {
-      maxTokens = Math.max(2000, 6000 - estimatedInputTokens);
-      console.log(`Large input detected. Estimated input tokens: ${estimatedInputTokens}, adjusted max_tokens to: ${maxTokens}`);
-    }
+    console.log(`Relationship analysis for ${tables.length} tables. Using max_tokens: ${maxTokens} for comprehensive analysis`);
+    
+    // Rough token estimation for logging purposes
+    const estimatedInputTokens = Math.ceil(prompt.length / 4);
+    console.log(`Estimated input tokens: ${estimatedInputTokens}, max_tokens: ${maxTokens}`);
     
     try {
       const response = await this.client.chat.completions.create({
@@ -323,8 +335,23 @@ class LLMService {
       const content = response.choices[0]?.message?.content || '';
       
       // Check if response was potentially truncated due to token limits
-      if (response.usage && response.usage.completion_tokens >= 3900) {
-        console.warn('Response may be truncated due to token limit. Completion tokens:', response.usage.completion_tokens);
+      // Use dynamic threshold based on the actual maxTokens we used
+      const truncationThreshold = Math.floor(maxTokens * 0.95); // 95% of max tokens indicates likely truncation
+      if (response.usage && response.usage.completion_tokens >= truncationThreshold) {
+        console.warn('⚠️  RELATIONSHIP ANALYSIS MAY BE TRUNCATED!');
+        console.warn(`Completion tokens: ${response.usage.completion_tokens} / Max tokens: ${maxTokens}`);
+        console.warn('Some relationships may be missing due to token limit reached');
+      }
+      
+      // Log token usage for analysis optimization
+      if (response.usage) {
+        console.log('Relationship analysis token usage:', {
+          prompt_tokens: response.usage.prompt_tokens,
+          completion_tokens: response.usage.completion_tokens,
+          total_tokens: response.usage.total_tokens,
+          maxTokens: maxTokens,
+          utilizationRate: `${Math.round((response.usage.completion_tokens / maxTokens) * 100)}%`
+        });
       }
       
       // Try to parse structured data from the response
@@ -620,29 +647,47 @@ Format your response as:
       .slice(0, 2); // Only use first 2 samples
 
     const sampleText = cleanedSamples.length > 0 
-      ? `Samples: ${cleanedSamples.join(', ')}`
-      : 'No samples';
+      ? `Sample values: ${cleanedSamples.join(', ')}`
+      : 'No sample values available';
 
-    let prompt = `Column: ${columnName} 
+    let prompt = `Analyze this database column and provide structured information:
+
+Column Name: ${columnName}
+Data Type: ${dataType}
 ${sampleText}`;
 
     // Add custom prompt if provided
     if (customPrompt && customPrompt.trim()) {
-      prompt += `\n\nCustom Instructions: ${customPrompt.trim()}`;
+      prompt += `\n\nAdditional Context: ${customPrompt.trim()}`;
     }
 
     prompt += `
 
-Return ONLY valid JSON:
-{"purpose":"brief purpose (no data types)","sample_value":"short example","data_pattern":"pattern type"}
+You must respond with ONLY valid JSON in this exact format:
+{
+  "purpose": "brief description of what this column represents (no data types mentioned)",
+  "sample_value": "a short, realistic example value",
+  "data_pattern": "type of data pattern"
+}
+
+Valid data_pattern values: alphanumeric, email, categorical, encrypted, numeric, date, datetime, boolean, url, phone, text
 
 Examples:
 {"purpose":"user identifier","sample_value":"user123","data_pattern":"alphanumeric"}
 {"purpose":"email address","sample_value":"user@domain.com","data_pattern":"email"}
-{"purpose":"user role","sample_value":"admin","data_pattern":"categorical"}
-{"purpose":"password hash","sample_value":"$2b$10...","data_pattern":"encrypted"}
+{"purpose":"user role or permission level","sample_value":"admin","data_pattern":"categorical"}
+{"purpose":"encrypted password hash","sample_value":"$2b$10...","data_pattern":"encrypted"}
+{"purpose":"creation timestamp","sample_value":"2024-01-15 10:30:00","data_pattern":"datetime"}
+{"purpose":"product price","sample_value":"29.99","data_pattern":"numeric"}
 
-ONLY JSON, no other text.`;
+CRITICAL REQUIREMENTS:
+- Start response immediately with {
+- End response with }
+- No explanatory text before or after
+- No markdown code blocks (no \`\`\`)
+- No "Here is..." or similar introductions
+- Must be parseable by JSON.parse()
+- Only the three required fields: purpose, sample_value, data_pattern`;
 
     return prompt;
   }
@@ -652,52 +697,94 @@ ONLY JSON, no other text.`;
       // Clean the content to extract just the JSON
       const cleanContent = content.trim();
       
-      // Try to find JSON in the response
+      // First, try to parse directly (for structured output)
+      if (cleanContent.startsWith('{') && cleanContent.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(cleanContent);
+          if (parsed.purpose && parsed.sample_value && parsed.data_pattern) {
+            return {
+              description: parsed.purpose,
+              exampleValue: parsed.sample_value,
+              valueType: parsed.data_pattern
+            };
+          }
+        } catch (directParseError) {
+          console.log('Direct JSON parse failed, trying extraction methods...');
+        }
+      }
+      
+      // Try to find JSON in the response using various extraction methods
       let jsonStr = cleanContent;
       
-      // If wrapped in code blocks, extract the JSON
+      // Method 1: If wrapped in code blocks, extract the JSON
       const codeBlockMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
       if (codeBlockMatch) {
         jsonStr = codeBlockMatch[1].trim();
+      } else {
+        // Method 2: Look for JSON object in the response (starts with { and ends with })
+        const jsonMatch = cleanContent.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/);
+        if (jsonMatch) {
+          jsonStr = jsonMatch[0];
+        } else {
+          // Method 3: Extract from first { to last }
+          const startIndex = cleanContent.indexOf('{');
+          const endIndex = cleanContent.lastIndexOf('}');
+          if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+            jsonStr = cleanContent.substring(startIndex, endIndex + 1);
+          } else {
+            console.warn('No JSON structure found in response:', cleanContent.substring(0, 100));
+            return null;
+          }
+        }
       }
       
       // Handle truncated JSON - try to complete it
       if (jsonStr.includes('"purpose"') && !jsonStr.endsWith('}')) {
-        // Try to find the last complete field and close the JSON
-        const lastQuote = jsonStr.lastIndexOf('"');
-        if (lastQuote > 0) {
-          // Find the start of the incomplete value
-          const beforeLastQuote = jsonStr.substring(0, lastQuote);
-          const lastColon = beforeLastQuote.lastIndexOf(':');
-          if (lastColon > 0) {
-            // Truncate to before the incomplete field and close the JSON
-            const beforeIncompleteField = jsonStr.substring(0, lastColon);
-            const lastComma = beforeIncompleteField.lastIndexOf(',');
-            if (lastComma > 0) {
-              jsonStr = jsonStr.substring(0, lastComma) + '}';
-            }
-          }
-        }
+        jsonStr = this.attemptJsonCompletion(jsonStr);
       }
       
       // Parse the JSON
       const parsed = JSON.parse(jsonStr);
       
-      // Validate required fields for new structure
+      // Validate required fields
       if (!parsed.purpose || !parsed.sample_value || !parsed.data_pattern) {
+        console.warn('Missing required fields in parsed JSON:', parsed);
         return null;
       }
 
-      // Convert to the expected response format - use just the purpose as description
+      // Convert to the expected response format
       return {
-        description: parsed.purpose, // Just the purpose, not the full JSON
-        exampleValue: parsed.sample_value,
-        valueType: parsed.data_pattern
+        description: String(parsed.purpose),
+        exampleValue: String(parsed.sample_value),
+        valueType: String(parsed.data_pattern)
       };
     } catch (error) {
       console.warn('Failed to parse brief column JSON response:', error);
-      console.warn('Raw content:', content);
+      console.warn('Raw content:', content.substring(0, 200));
       return null;
+    }
+  }
+
+  private attemptJsonCompletion(jsonStr: string): string {
+    try {
+      // Try to find the last complete field and close the JSON
+      const lastQuote = jsonStr.lastIndexOf('"');
+      if (lastQuote > 0) {
+        // Find the start of the incomplete value
+        const beforeLastQuote = jsonStr.substring(0, lastQuote);
+        const lastColon = beforeLastQuote.lastIndexOf(':');
+        if (lastColon > 0) {
+          // Truncate to before the incomplete field and close the JSON
+          const beforeIncompleteField = jsonStr.substring(0, lastColon);
+          const lastComma = beforeIncompleteField.lastIndexOf(',');
+          if (lastComma > 0) {
+            return jsonStr.substring(0, lastComma) + '}';
+          }
+        }
+      }
+      return jsonStr + '}'; // Simple fallback
+    } catch (error) {
+      return jsonStr;
     }
   }
 

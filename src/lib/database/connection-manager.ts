@@ -786,23 +786,120 @@ export class DatabaseConnectionManager {
     }
   }
 
-  // Placeholder methods for other databases (can be implemented later)
+  // BigQuery sample data implementation
   private static async queryBigQuerySampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
-    // TODO: Implement BigQuery sample data query
-    console.log('BigQuery sample data not implemented yet');
-    return [];
+    try {
+      const { BigQuery } = require('@google-cloud/bigquery');
+      
+      const bigquery = new BigQuery({
+        projectId: config.projectId,
+        keyFilename: credentials?.serviceAccountPath,
+        credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
+      });
+
+      // Use the schema (dataset) name if provided, otherwise use the first available
+      let datasetId = schemaName;
+      if (!datasetId) {
+        const [datasets] = await bigquery.getDatasets();
+        if (datasets && datasets.length > 0) {
+          datasetId = datasets[0].id;
+        } else {
+          console.warn('No datasets found in BigQuery project');
+          return [];
+        }
+      }
+
+      const query = `SELECT * FROM \`${config.projectId}.${datasetId}.${tableName}\` LIMIT ${limit}`;
+      console.log('BigQuery sample data query:', query);
+      
+      const [rows] = await bigquery.query({ query });
+      return rows;
+    } catch (error) {
+      console.warn('BigQuery sample data fetch error:', error instanceof Error ? error.message : 'Unknown error');
+      return [];
+    }
   }
 
   private static async queryDatabricksSampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
-    // TODO: Implement Databricks sample data query
-    console.log('Databricks sample data not implemented yet');
-    return [];
+    try {
+      // Note: This is a simplified implementation. In a real scenario, you would need
+      // to use the Databricks SQL connector or SQL API
+      const fetch = require('node-fetch');
+      
+      // This would require proper SQL execution through Databricks API
+      // For now, return empty array to avoid errors
+      console.log('Databricks sample data query would be executed here');
+      console.warn('Databricks sample data not fully implemented - returning empty data');
+      return [];
+    } catch (error) {
+      console.warn('Databricks sample data fetch error:', error instanceof Error ? error.message : 'Unknown error');
+      return [];
+    }
   }
 
   private static async queryDB2SampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
-    // TODO: Implement DB2 sample data query
-    console.log('DB2 sample data not implemented yet');
-    return [];
+    try {
+      const ibmdb = require('ibm_db');
+      
+      const connectionString = `DATABASE=${config.database};HOSTNAME=${config.hostname || config.host};PORT=${config.port || 50000};PROTOCOL=TCPIP;UID=${credentials?.username || credentials?.user};PWD=${credentials?.password};`;
+      
+      return new Promise((resolve) => {
+        const connectionTimeout = setTimeout(() => {
+          console.warn('DB2 connection timeout for sample data. Returning empty data.');
+          resolve([]);
+        }, 10000);
+        
+        try {
+          ibmdb.open(connectionString, (err: any, conn: any) => {
+            clearTimeout(connectionTimeout);
+            
+            if (err) {
+              console.warn(`DB2 connection failed for sample data: ${err.message || 'Unknown error'}`);
+              resolve([]);
+              return;
+            }
+            
+            // Use schema-qualified table name for sample data query
+            let schemaQualifiedTable: string;
+            if (schemaName) {
+              schemaQualifiedTable = `${schemaName}.${tableName}`;
+            } else if (!tableName.includes('.')) {
+              // If no schema specified, use RETAIL_SYS as default
+              schemaQualifiedTable = `RETAIL_SYS.${tableName}`;
+            } else {
+              schemaQualifiedTable = tableName;
+            }
+            
+            const query = `SELECT * FROM ${schemaQualifiedTable} FETCH FIRST ${limit} ROWS ONLY`;
+            console.log(`DB2 sample data query: ${query}`);
+            
+            conn.query(query, (queryErr: any, result: any) => {
+              conn.close();
+              
+              if (queryErr) {
+                console.log(`DB2 query failed for sample data: ${queryErr.message || 'Unknown error'}`);
+                resolve([]);
+                return;
+              }
+              
+              if (!result || result.length === 0) {
+                resolve([]);
+                return;
+              }
+              
+              resolve(result);
+            });
+          });
+        } catch (openError) {
+          clearTimeout(connectionTimeout);
+          console.warn(`Failed to open DB2 connection for sample data: ${openError instanceof Error ? openError.message : 'Unknown error'}`);
+          resolve([]);
+        }
+      });
+    } catch (error) {
+      console.warn('DB2 sample data fetch error:', error instanceof Error ? error.message : 'Unknown error');
+      return [];
+    }
   }
 
   // BigQuery connection methods

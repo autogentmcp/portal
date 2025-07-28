@@ -123,7 +123,7 @@ model DataAgentTable {
   rowCount          Int?
   isActive          Boolean               @default(true)
   analysisStatus    String                @default("PENDING")
-  analysisResult    Json?
+  analysisResult    String?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   sourceRelations   DataAgentRelation[]   @relation("SourceTable")
@@ -160,10 +160,10 @@ model Endpoint {
   method        String
   description   String?
   isPublic      Boolean      @default(false)
-  pathParams    Json?
-  queryParams   Json?
-  requestBody   Json?
-  responseBody  Json?
+  pathParams    String?
+  queryParams   String?
+  requestBody   String?
+  responseBody  String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   applicationId String
@@ -201,7 +201,7 @@ model Environment {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   applicationId        String?
-  connectionConfig     Json?
+  connectionConfig     String?
   dataAgentId          String?
   environmentType      String               @default("APPLICATION")
   lastConnectedAt      DateTime?

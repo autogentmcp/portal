@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { getLLMService } from '@/lib/llm';
 import { DatabaseConnectionManager } from '@/lib/database/connection-manager';
+import { DatabaseJsonHelper } from '@/lib/database/json-helper';
 
 // POST /api/admin/data-agents/[id]/environments/[environmentId]/tables/[tableId]/analyze
 export async function POST(
@@ -78,20 +79,45 @@ export async function POST(
       console.log('🤖 Initializing LLM service...');
       const llmService = getLLMService();
       
+      // Parse connectionConfig if it's a JSON string
+      const connectionConfig = DatabaseJsonHelper.deserialize(environment.connectionConfig as string) || {};
+      
+      // Get credentials from vault
+      let credentials = null;
+      if (environment.vaultKey) {
+        try {
+          const { SecretManager } = await import('@/lib/secrets');
+          const secretManager = SecretManager.getInstance();
+          await secretManager.init();
+          
+          if (secretManager.hasProvider()) {
+            credentials = await secretManager.getCredentials(environment.vaultKey);
+            console.log('✅ Retrieved credentials from vault');
+            
+            // Ensure password is a string
+            if (credentials && credentials.password && typeof credentials.password !== 'string') {
+              credentials.password = String(credentials.password);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error retrieving credentials from vault:', error);
+        }
+      }
+      
       console.log('🔌 Attempting to connect to database and fetch sample data...');
-      console.log('🔧 Environment connection details:', {
-        type: environment.databaseType,
-        host: environment.host,
-        port: environment.port,
-        database: environment.database,
-        username: environment.username ? '***' : 'none'
+      console.log('🔧 Connection details:', {
+        type: dataAgent.connectionType,
+        host: connectionConfig.host,
+        port: connectionConfig.port,
+        database: connectionConfig.database,
+        hasCredentials: !!(credentials?.username && credentials?.password)
       });
       
       // Get sample data from the database
       const sampleData = await DatabaseConnectionManager.querySampleData(
-        environment.databaseType,
-        environment.config,
-        environment.credentials,
+        dataAgent.connectionType,
+        connectionConfig,
+        credentials || { username: '', password: '' },
         table.tableName,
         undefined, // schema name - can add support later
         10 // limit to 10 rows
@@ -196,7 +222,7 @@ export async function POST(
         where: { id: tableId },
         data: {
           analysisStatus: 'COMPLETED',
-          analysisResult: analysisResult,
+          analysisResult: DatabaseJsonHelper.serialize(analysisResult),
           updatedAt: new Date()
         },
         include: {
@@ -218,15 +244,17 @@ export async function POST(
       
       console.log('💾 Marking table analysis as FAILED...');
       // Mark as failed
+      const failedAnalysisResult = {
+        error: 'AI analysis failed',
+        message: analysisError instanceof Error ? analysisError.message : 'Unknown error',
+        analyzedAt: new Date().toISOString()
+      };
+      
       await (prisma.dataAgentTable as any).update({
         where: { id: tableId },
         data: {
           analysisStatus: 'FAILED',
-          analysisResult: {
-            error: 'AI analysis failed',
-            message: analysisError instanceof Error ? analysisError.message : 'Unknown error',
-            analyzedAt: new Date().toISOString()
-          },
+          analysisResult: DatabaseJsonHelper.serialize(failedAnalysisResult),
           updatedAt: new Date()
         }
       });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
+import { DatabaseJsonHelper } from '@/lib/database/json-helper'
 
 // GET /api/admin/data-agents/[id] - Get specific data agent
 export async function GET(
@@ -70,28 +71,48 @@ export async function GET(
       return NextResponse.json({ error: 'Data agent not found' }, { status: 404 })
     }
 
-    // Get credentials from vault if available
-    if (dataAgent.vaultKey) {
-      try {
-        const { SecretManager } = await import('@/lib/secrets')
-        const secretManager = SecretManager.getInstance()
-        await secretManager.init()
+    // Transform environments to parse JSON fields and get vault credentials
+    if (dataAgent.environments) {
+      // We need to handle vault access for each environment
+      const transformedEnvironments = [];
+      
+      for (const env of dataAgent.environments) {
+        const transformedEnv = DatabaseJsonHelper.transformPrismaResult(env, ['connectionConfig']);
         
-        if (secretManager.hasProvider()) {
-          const credentials = await secretManager.getCredentials(dataAgent.vaultKey)
-          if (credentials) {
-            // Add credentials to connection config for display/editing
-            const config = dataAgent.connectionConfig as any;
-            dataAgent.connectionConfig = {
-              ...config,
-              credentials
+        // Get credentials from vault if available for this environment
+        if (transformedEnv.vaultKey) {
+          try {
+            const { SecretManager } = await import('@/lib/secrets')
+            const secretManager = SecretManager.getInstance()
+            await secretManager.init()
+            
+            if (secretManager.hasProvider()) {
+              const credentials = await secretManager.getCredentials(transformedEnv.vaultKey)
+              if (credentials && transformedEnv.connectionConfig) {
+                // Add credentials to connection config for display/editing
+                transformedEnv.connectionConfig = {
+                  ...transformedEnv.connectionConfig,
+                  credentials
+                }
+              }
             }
+          } catch (error) {
+            console.error('Failed to retrieve credentials from vault for environment:', transformedEnv.id, error)
+            // Continue without credentials
           }
         }
-      } catch (error) {
-        console.error('Failed to retrieve credentials from vault')
-        // Continue without credentials
+        
+        transformedEnvironments.push(transformedEnv);
       }
+      
+      dataAgent.environments = transformedEnvironments;
+    }
+
+    // Transform tables to parse JSON fields
+    if (dataAgent.tables) {
+      dataAgent.tables = dataAgent.tables.map((table: any) => 
+        DatabaseJsonHelper.transformPrismaResult(table, ['analysisResult'])
+      );
     }
 
     return NextResponse.json(dataAgent)
@@ -116,7 +137,7 @@ export async function PUT(
     }
 
     const { id } = await params
-    const { name, description, connectionConfig } = await request.json()
+    const { name, description } = await request.json()
 
     // Check if data agent exists
     const existingAgent = await prisma.dataAgent.findUnique({
@@ -127,36 +148,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Data agent not found' }, { status: 404 })
     }
 
-    // Update credentials in vault if provided
-    let finalConnectionConfig = connectionConfig
-    if (connectionConfig?.credentials && existingAgent.vaultKey) {
-      try {
-        const { SecretManager } = await import('@/lib/secrets')
-        const secretManager = SecretManager.getInstance()
-        await secretManager.init()
-        
-        if (secretManager.hasProvider()) {
-          await secretManager.storeCredentials(existingAgent.vaultKey, connectionConfig.credentials)
-          
-          // Remove credentials from config before storing in database
-          const { credentials, ...configWithoutCredentials } = connectionConfig
-          finalConnectionConfig = configWithoutCredentials
-        }
-      } catch (error) {
-        console.error('Failed to update credentials in vault')
-        return NextResponse.json(
-          { error: 'Failed to update connection credentials' },
-          { status: 500 }
-        )
-      }
-    }
-
     const updatedAgent = await prisma.dataAgent.update({
       where: { id },
       data: {
         name,
         description,
-        connectionConfig: finalConnectionConfig,
       },
       include: {
         user: {
@@ -194,22 +190,29 @@ export async function DELETE(
 
     // Check if data agent exists
     const existingAgent = await prisma.dataAgent.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        environments: true
+      }
     })
 
     if (!existingAgent) {
       return NextResponse.json({ error: 'Data agent not found' }, { status: 404 })
     }
 
-    // Delete credentials from vault if they exist
-    if (existingAgent.vaultKey) {
+    // Delete credentials from vault for all environments if they exist
+    if (existingAgent.environments && existingAgent.environments.length > 0) {
       try {
         const { SecretManager } = await import('@/lib/secrets')
         const secretManager = SecretManager.getInstance()
         await secretManager.init()
         
         if (secretManager.hasProvider()) {
-          await secretManager.deleteSecuritySetting(existingAgent.vaultKey)
+          for (const environment of existingAgent.environments) {
+            if (environment.vaultKey) {
+              await secretManager.deleteSecuritySetting(environment.vaultKey)
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to delete credentials from vault')

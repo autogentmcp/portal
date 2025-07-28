@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
+import { DatabaseJsonHelper } from '@/lib/database/json-helper';
 
 // GET /api/admin/data-agents/[id]/environments/[environmentId]/tables/available - Get available tables from database
 export async function GET(
@@ -60,14 +61,18 @@ export async function GET(
       }
     }
 
+    // Parse connectionConfig if it's a JSON string
+    const connectionConfig = DatabaseJsonHelper.deserialize(environment.connectionConfig as string) || {};
+    console.log('Parsed ConnectionConfig:', JSON.stringify(connectionConfig, null, 2));
+
     // Get available tables based on connection type
     console.log(`Fetching tables for connection type: ${dataAgent.connectionType}`);
     let tables = [];
     if (dataAgent.connectionType === 'postgresql') {
-      tables = await getPostgreSQLTables(environment.connectionConfig, credentials);
+      tables = await getPostgreSQLTables(connectionConfig, credentials);
     } else if (dataAgent.connectionType === 'db2') {
       console.log('DEBUG: Starting DB2 table discovery...');
-      tables = await getDB2Tables(environment.connectionConfig, credentials);
+      tables = await getDB2Tables(connectionConfig, credentials);
       console.log(`DEBUG: DB2 table discovery returned ${tables.length} tables`);
       if (tables.length > 0) {
         console.log('DEBUG: Sample table names:', tables.slice(0, 3).map(t => t.name));
@@ -75,13 +80,13 @@ export async function GET(
         console.log('DEBUG: No tables returned from DB2 query');
       }
     } else if (dataAgent.connectionType === 'mysql') {
-      tables = await getMySQLTables(environment.connectionConfig, credentials);
+      tables = await getMySQLTables(connectionConfig, credentials);
     } else if (dataAgent.connectionType === 'mssql' || dataAgent.connectionType === 'sqlserver') {
-      tables = await getSQLServerTables(environment.connectionConfig, credentials);
+      tables = await getSQLServerTables(connectionConfig, credentials);
     } else if (dataAgent.connectionType === 'bigquery') {
-      tables = await getBigQueryTables(environment.connectionConfig, credentials);
+      tables = await getBigQueryTables(connectionConfig, credentials);
     } else if (dataAgent.connectionType === 'databricks') {
-      tables = await getDatabricksTables(environment.connectionConfig, credentials);
+      tables = await getDatabricksTables(connectionConfig, credentials);
     } else {
       return NextResponse.json(
         { error: `Connection type '${dataAgent.connectionType}' is not supported yet for table discovery` },
