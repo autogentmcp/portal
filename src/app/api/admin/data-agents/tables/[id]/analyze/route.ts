@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { getLLMService } from '@/lib/llm';
 import { DatabaseConnectionManager } from '@/lib/database/connection-manager';
+import { DatabaseJsonHelper } from '@/lib/database/json-helper';
 
 // POST /api/admin/data-agents/tables/[id]/analyze - Analyze table with LLM
 export async function POST(
@@ -77,7 +78,7 @@ export async function POST(
               isNullable: field.isNullable,
               isPrimaryKey: field.isPrimaryKey,
               sampleValues: Array.isArray(sampleData[field.columnName]) ? sampleData[field.columnName] as string[] : [],
-              customPrompt: table.environment?.customPrompt || undefined,
+              customPrompt: (table.environment as any)?.customPrompt || undefined,
             });
             
             console.log(`✅ AI analysis complete for ${field.columnName}:`, {
@@ -122,16 +123,18 @@ export async function POST(
       );
 
       // Update table with analysis results
-      await prisma.dataAgentTable.update({
+      const analysisResultData = {
+        summary: tableAnalysis.content,
+        analyzedAt: new Date().toISOString(),
+        usage: tableAnalysis.usage,
+      };
+      
+      await (prisma.dataAgentTable as any).update({
         where: { id },
         data: {
           analysisStatus: 'COMPLETED',
           description: tableAnalysis.content.substring(0, 500), // Always use new LLM analysis, truncate if too long
-          analysisResult: {
-            summary: tableAnalysis.content,
-            analyzedAt: new Date().toISOString(),
-            usage: tableAnalysis.usage,
-          },
+          analysisResult: DatabaseJsonHelper.serialize(analysisResultData),
           updatedAt: new Date(),
         },
       });
@@ -195,10 +198,19 @@ async function getSampleData(table: any): Promise<SampleDataResult> {
   }
 
   // Use environment connectionConfig if available, fallback to dataAgent
-  const connectionConfig = environment?.connectionConfig || dataAgent.connectionConfig;
+  const rawConnectionConfig = environment?.connectionConfig || dataAgent.connectionConfig;
+  
+  // Parse connectionConfig if it's a JSON string
+  const connectionConfig = DatabaseJsonHelper.deserialize(rawConnectionConfig as string) || {};
 
   try {
-    switch (dataAgent.connectionType.toLowerCase()) {
+    const connectionType = dataAgent.connectionType;
+    if (!connectionType) {
+      console.warn('No connection type specified for data agent');
+      return {};
+    }
+
+    switch (connectionType.toLowerCase()) {
       case 'postgres':
       case 'postgresql':
         return await getPostgresSampleData(connectionConfig, credentials, table.tableName, table.schemaName);
@@ -220,7 +232,7 @@ async function getSampleData(table: any): Promise<SampleDataResult> {
         return await getDatabricksSampleData(connectionConfig, credentials, table.tableName, table.schemaName);
       
       default:
-        console.warn(`Sample data not supported for connection type: ${dataAgent.connectionType}`);
+        console.warn(`Sample data not supported for connection type: ${connectionType}`);
         return {};
     }
   } catch (error) {

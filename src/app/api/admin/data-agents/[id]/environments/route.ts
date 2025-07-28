@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { DatabaseJsonHelper } from '@/lib/database/json-helper';
 import crypto from 'crypto';
 
 export async function POST(
@@ -120,6 +121,19 @@ export async function POST(
     const initialStatus = connectionTested ? 'ACTIVE' : 'UNKNOWN';
     const initialHealthStatus = connectionTested ? 'HEALTHY' : 'UNKNOWN';
     
+    // Serialize connectionConfig to JSON string for database storage
+    const serializedConnectionConfig = DatabaseJsonHelper.serialize({
+      ...finalConnectionConfig,
+      // Store additional configuration options
+      ...(connectionConfig.sslMode && { sslMode: connectionConfig.sslMode }),
+      ...(connectionConfig.encrypt !== undefined && { encrypt: connectionConfig.encrypt }),
+      ...(connectionConfig.trustServerCertificate !== undefined && { trustServerCertificate: connectionConfig.trustServerCertificate }),
+      ...(connectionConfig.connectionTimeout && { connectionTimeout: connectionConfig.connectionTimeout }),
+      ...(connectionConfig.requestTimeout && { requestTimeout: connectionConfig.requestTimeout }),
+      ...(connectionConfig.commandTimeout && { commandTimeout: connectionConfig.commandTimeout }),
+      ...(connectionConfig.options && { options: connectionConfig.options })
+    });
+    
     const environment = await prisma.environment.create({
       data: {
         name: environmentType,
@@ -129,17 +143,8 @@ export async function POST(
         healthStatus: initialHealthStatus,
         environmentType: 'DATA_AGENT', // Set the type to DATA_AGENT
         dataAgentId: dataAgentId,       // Link to the data agent
-        connectionConfig: {
-          ...finalConnectionConfig,
-          // Store additional configuration options
-          ...(connectionConfig.sslMode && { sslMode: connectionConfig.sslMode }),
-          ...(connectionConfig.encrypt !== undefined && { encrypt: connectionConfig.encrypt }),
-          ...(connectionConfig.trustServerCertificate !== undefined && { trustServerCertificate: connectionConfig.trustServerCertificate }),
-          ...(connectionConfig.connectionTimeout && { connectionTimeout: connectionConfig.connectionTimeout }),
-          ...(connectionConfig.requestTimeout && { requestTimeout: connectionConfig.requestTimeout }),
-          ...(connectionConfig.commandTimeout && { commandTimeout: connectionConfig.commandTimeout }),
-          ...(connectionConfig.options && { options: connectionConfig.options })
-        },
+        // @ts-ignore - connectionConfig is now String type for database compatibility
+        connectionConfig: serializedConnectionConfig,
         vaultKey,
         lastConnectedAt: connectionTested ? new Date() : null
       }

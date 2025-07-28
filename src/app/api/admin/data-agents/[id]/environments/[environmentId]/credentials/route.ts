@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
+import { DatabaseJsonHelper } from '@/lib/database/json-helper';
 
 // PUT /api/admin/data-agents/[id]/environments/[environmentId]/credentials - Update environment credentials
 export async function PUT(
@@ -56,12 +57,15 @@ export async function PUT(
           }
         }
         
+        // Parse connectionConfig if it's a JSON string
+        const connectionConfig = DatabaseJsonHelper.deserialize(environment.connectionConfig as string) || {};
+        
         // Merge existing connection config with new credentials
         const updatedCredentials = {
           ...existingCredentials,
-          host: environment.connectionConfig.host,
-          port: String(environment.connectionConfig.port || '5432'),
-          database: environment.connectionConfig.database,
+          host: connectionConfig.host,
+          port: String(connectionConfig.port || '5432'),
+          database: connectionConfig.database,
           username: String(username),
           password: String(password)
         };

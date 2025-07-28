@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthUser } from '@/lib/auth'
+import { DatabaseJsonHelper } from '@/lib/database/json-helper'
 
 // POST /api/admin/data-agents/[id]/environments/[environmentId]/test-connection - Test environment-specific connection
 export async function POST(
@@ -62,10 +63,13 @@ export async function POST(
       )
     }
 
+    // Parse connectionConfig if it's a JSON string
+    const connectionConfig = DatabaseJsonHelper.deserialize(environment.connectionConfig as string) || {};
+
     // Test connection using environment's connection config and retrieved credentials
     const connectionResult = await testConnection(
       dataAgent.connectionType, 
-      environment.connectionConfig, 
+      connectionConfig, 
       credentials
     )
 

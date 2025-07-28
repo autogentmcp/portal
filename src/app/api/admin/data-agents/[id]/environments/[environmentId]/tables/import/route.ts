@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
+import { DatabaseJsonHelper } from '@/lib/database/json-helper';
 
 // POST /api/admin/data-agents/[id]/environments/[environmentId]/tables/import - Import selected tables
 export async function POST(
@@ -63,13 +64,16 @@ export async function POST(
       }
     }
 
+    // Parse connectionConfig if it's a JSON string
+    const connectionConfig = DatabaseJsonHelper.deserialize(environment.connectionConfig as string) || {};
+
     // Import tables based on connection type
     let importResults = [];
     if (dataAgent.connectionType === 'postgresql') {
       importResults = await importPostgreSQLTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -77,7 +81,7 @@ export async function POST(
       importResults = await importMySQLTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -85,7 +89,7 @@ export async function POST(
       importResults = await importSQLServerTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -93,7 +97,7 @@ export async function POST(
       importResults = await importDB2Tables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -101,7 +105,7 @@ export async function POST(
       importResults = await importBigQueryTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -109,7 +113,7 @@ export async function POST(
       importResults = await importDatabricksTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
