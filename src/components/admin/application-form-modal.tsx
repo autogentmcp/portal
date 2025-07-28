@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 
 interface ApplicationFormModalProps {
@@ -35,6 +35,15 @@ export default function ApplicationFormModal({
     status: application?.status || 'ACTIVE',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Update form data when application prop changes
+  useEffect(() => {
+    setFormData({
+      name: application?.name || '',
+      description: application?.description || '',
+      status: application?.status || 'ACTIVE',
+    })
+  }, [application])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

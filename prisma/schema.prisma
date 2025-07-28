@@ -102,6 +102,8 @@ model DataAgentTableColumn {
   referencedTable   String?
   referencedColumn  String?
   aiDescription     String?
+  aiExampleValue    String?
+  aiValueType       String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   table             DataAgentTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
@@ -191,6 +193,7 @@ model Environment {
   id                   String               @id @default(cuid())
   name                 String
   description          String?
+  customPrompt         String?
   status               String               @default("ACTIVE")
   baseDomain           String?
   healthStatus         String               @default("UNKNOWN")

@@ -6,6 +6,7 @@ interface EnvironmentHeaderProps {
   onImportTables: () => void;
   onDeleteEnvironment: () => void;
   onEditCredentials: () => void;
+  onEditEnvironment: () => void;
   testingConnection: boolean;
   loadingTables: boolean;
   deletingEnvironment: boolean;
@@ -17,6 +18,7 @@ export default function EnvironmentHeader({
   onImportTables,
   onDeleteEnvironment,
   onEditCredentials,
+  onEditEnvironment,
   testingConnection,
   loadingTables,
   deletingEnvironment
@@ -45,6 +47,12 @@ export default function EnvironmentHeader({
           <p className="text-gray-600 dark:text-gray-400 text-sm">{environment.description}</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={onEditEnvironment}
+            className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Edit Environment
+          </button>
           <button
             onClick={onEditCredentials}
             className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

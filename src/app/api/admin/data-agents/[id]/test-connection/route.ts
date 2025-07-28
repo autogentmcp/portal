@@ -174,14 +174,24 @@ async function testPostgresConnection(config: any, credentials: any) {
   try {
     const { Client } = require('pg')
     
+    // Handle SSL configuration based on sslMode
+    let sslConfig: any = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      sslConfig = { mode: config.sslMode };
+      // For require mode, just enable SSL
+      if (config.sslMode === 'require') {
+        sslConfig = true;
+      }
+    }
+    
     const client = new Client({
       host: config.host,
       port: config.port || 5432,
       database: config.database,
       user: credentials?.username || credentials?.user,
       password: credentials?.password,
-      ssl: config.ssl || false,
-      connectionTimeoutMillis: 5000,
+      ssl: sslConfig,
+      connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000, // Convert to milliseconds
     })
 
     await client.connect()
@@ -206,14 +216,27 @@ async function testMySQLConnection(config: any, credentials: any) {
   try {
     const mysql = require('mysql2/promise')
     
+    // Handle SSL configuration based on sslMode
+    let sslConfig: any = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      if (config.sslMode === 'require') {
+        sslConfig = true;
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const connection = await mysql.createConnection({
       host: config.host,
       port: config.port || 3306,
       database: config.database,
       user: credentials?.username || credentials?.user,
       password: credentials?.password,
-      ssl: config.ssl || false,
-      connectTimeout: 5000,
+      ssl: sslConfig,
+      connectTimeout: (config.connectionTimeout || 30) * 1000, // Convert to milliseconds
     })
 
     await connection.execute('SELECT 1')
@@ -248,9 +271,10 @@ async function testMSSQLConnection(config: any, credentials: any) {
         trustServerCertificate: config.trustServerCertificate || false,
         enableArithAbort: true,
         instanceName: config.instance || undefined,
+        ...(config.applicationName && { appName: config.applicationName }),
       },
-      connectionTimeout: 5000,
-      requestTimeout: 5000,
+      connectionTimeout: (config.connectionTimeout || 30) * 1000, // Convert to milliseconds
+      requestTimeout: (config.connectionTimeout || 30) * 1000, // Convert to milliseconds
     }
 
     const pool = await sql.connect(poolConfig)
@@ -275,21 +299,82 @@ async function testBigQueryConnection(config: any, credentials: any) {
   try {
     const { BigQuery } = require('@google-cloud/bigquery')
     
-    const bigquery = new BigQuery({
-      projectId: config.projectId,
-      keyFilename: credentials?.serviceAccountPath,
-      credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
-    })
+    console.log('=== BigQuery Connection Debug ===');
+    console.log('Config:', JSON.stringify(config, null, 2));
+    console.log('Credentials keys:', Object.keys(credentials || {}));
+    console.log('Credentials projectId:', credentials?.projectId);
+    console.log('Has serviceAccountJson:', !!credentials?.serviceAccountJson);
+    console.log('ServiceAccountJson type:', typeof credentials?.serviceAccountJson);
+    if (credentials?.serviceAccountJson) {
+      console.log('ServiceAccountJson length:', credentials.serviceAccountJson.length);
+      console.log('ServiceAccountJson preview:', credentials.serviceAccountJson.substring(0, 100) + '...');
+    }
+    
+    // For BigQuery, the credentials should include serviceAccountJson
+    let bigqueryConfig: any = {
+      projectId: config.projectId || credentials?.projectId,
+    };
+
+    // Handle service account JSON - it could be in config or credentials
+    const serviceAccountJson = config.serviceAccountJson || credentials?.serviceAccountJson;
+    
+    if (serviceAccountJson) {
+      try {
+        // Parse the service account JSON if it's a string
+        const parsedCredentials = typeof serviceAccountJson === 'string' 
+          ? JSON.parse(serviceAccountJson) 
+          : serviceAccountJson;
+        
+        console.log('Parsed credentials project_id:', parsedCredentials.project_id);
+        console.log('Parsed credentials client_email:', parsedCredentials.client_email);
+        console.log('Has private_key:', !!parsedCredentials.private_key);
+        
+        bigqueryConfig.credentials = parsedCredentials;
+        console.log('BigQuery config set with credentials');
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError);
+        return {
+          success: false,
+          message: 'Invalid service account JSON format',
+          error: parseError instanceof Error ? parseError.message : 'JSON parsing failed'
+        };
+      }
+    } else if (credentials?.serviceAccountPath) {
+      bigqueryConfig.keyFilename = credentials.serviceAccountPath;
+      console.log('BigQuery config set with keyFilename');
+    } else {
+      console.error('No BigQuery credentials found');
+      return {
+        success: false,
+        message: 'BigQuery requires either service account JSON or service account key file path',
+        error: 'Missing authentication credentials'
+      };
+    }
+
+    console.log('Final BigQuery config:', {
+      projectId: bigqueryConfig.projectId,
+      hasCredentials: !!bigqueryConfig.credentials,
+      hasKeyFilename: !!bigqueryConfig.keyFilename
+    });
+
+    const bigquery = new BigQuery(bigqueryConfig);
 
     // Test with a simple query
     const query = 'SELECT 1 as test'
+    console.log('Executing BigQuery test query...');
     const [rows] = await bigquery.query({ query, dryRun: true })
 
+    console.log('BigQuery test successful');
     return {
       success: true,
       message: 'BigQuery connection successful'
     }
   } catch (error) {
+    console.error('BigQuery connection error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined
+    });
     return {
       success: false,
       message: 'BigQuery connection failed',

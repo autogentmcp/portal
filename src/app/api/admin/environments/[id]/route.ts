@@ -15,22 +15,27 @@ export async function PATCH(
     }
 
     const { id } = params
-    const { name, status, baseDomain } = await request.json()
+    const { name, status, baseDomain, customPrompt } = await request.json()
 
-    if (!baseDomain) {
-      return NextResponse.json(
-        { error: 'Base domain is required' },
-        { status: 400 }
-      )
-    }
-
-    // Check if environment exists
+    // Check if environment exists and what it belongs to
     const environment = await prisma.environment.findUnique({
       where: { id },
+      include: {
+        application: true,
+        dataAgent: true,
+      }
     })
 
     if (!environment) {
       return NextResponse.json({ error: 'Environment not found' }, { status: 404 })
+    }
+
+    // Base domain is only required for application environments, not data agent environments
+    if (environment.application && !baseDomain) {
+      return NextResponse.json(
+        { error: 'Base domain is required for application environments' },
+        { status: 400 }
+      )
     }
 
     // Update the environment
@@ -40,7 +45,8 @@ export async function PATCH(
         name: name || undefined,
         status: status || undefined,
         // @ts-ignore - baseDomain field issue with Prisma types
-        baseDomain,
+        baseDomain: baseDomain || undefined,
+        customPrompt: customPrompt || undefined,
       },
     })
 

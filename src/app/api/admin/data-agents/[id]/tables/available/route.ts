@@ -102,14 +102,24 @@ async function getAvailableTables(
 async function getPostgresTables(config: any, credentials: any) {
   const { Client } = require('pg');
   
+  // Handle SSL configuration based on sslMode
+  let sslConfig: any = false;
+  if (config.sslMode && config.sslMode !== 'disable') {
+    sslConfig = { mode: config.sslMode };
+    // For require mode, just enable SSL
+    if (config.sslMode === 'require') {
+      sslConfig = true;
+    }
+  }
+  
   const client = new Client({
     host: config.host,
     port: config.port || 5432,
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
-    ssl: config.ssl || false,
-    connectionTimeoutMillis: 10000,
+    ssl: sslConfig,
+    connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
   });
 
   try {
@@ -164,14 +174,27 @@ async function getPostgresTables(config: any, credentials: any) {
 async function getMySQLTables(config: any, credentials: any) {
   const mysql = require('mysql2/promise');
   
+  // Handle SSL configuration based on sslMode
+  let sslConfig: any = false;
+  if (config.sslMode && config.sslMode !== 'disable') {
+    if (config.sslMode === 'require') {
+      sslConfig = true;
+    } else {
+      sslConfig = {
+        mode: config.sslMode,
+        rejectUnauthorized: config.sslMode === 'verify-full'
+      };
+    }
+  }
+  
   const connection = await mysql.createConnection({
     host: config.host,
     port: config.port || 3306,
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
-    ssl: config.ssl || false,
-    connectTimeout: 10000,
+    ssl: sslConfig,
+    connectTimeout: (config.connectionTimeout || 30) * 1000,
   });
 
   try {

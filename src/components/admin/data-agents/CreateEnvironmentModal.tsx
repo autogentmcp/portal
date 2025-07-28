@@ -35,11 +35,23 @@ export default function CreateEnvironmentModal({
   // Check if all environment types are created
   const allTypesCreated = availableTypes.length === 0;
 
-  const isValid = newEnvironment.environmentType &&
-    newEnvironment.connectionConfig.host && 
-    newEnvironment.connectionConfig.database && 
-    newEnvironment.credentials.username && 
-    newEnvironment.credentials.password;
+  // Validation logic based on connection type
+  const isValid = (() => {
+    const baseValid = newEnvironment.environmentType && 
+      newEnvironment.connectionConfig.database;
+
+    if (dataAgent.connectionType?.toLowerCase() === 'bigquery') {
+      return baseValid && 
+        newEnvironment.connectionConfig.projectId &&
+        newEnvironment.connectionConfig.serviceAccountJson;
+    }
+
+    // For other databases, require host, username, password
+    return baseValid &&
+      newEnvironment.connectionConfig.host && 
+      newEnvironment.credentials.username && 
+      newEnvironment.credentials.password;
+  })();
 
   const isConnectionTestable = isValid;
 
@@ -128,6 +140,17 @@ export default function CreateEnvironmentModal({
                     <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
                       {ENVIRONMENT_TYPES.find(t => t.value === newEnvironment.environmentType)?.description}
                     </p>
+                    {dataAgent.connectionType && (
+                      <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                        <strong>Database Type:</strong> {dataAgent.connectionType.toUpperCase()}
+                        {dataAgent.connectionType?.toLowerCase() === 'bigquery' && ' - Cloud data warehouse'}
+                        {['postgres', 'postgresql'].includes(dataAgent.connectionType?.toLowerCase()) && ' - Open source relational database'}
+                        {dataAgent.connectionType?.toLowerCase() === 'mysql' && ' - Popular open source database'}
+                        {['mssql', 'sqlserver'].includes(dataAgent.connectionType?.toLowerCase()) && ' - Microsoft SQL Server'}
+                        {dataAgent.connectionType?.toLowerCase() === 'db2' && ' - IBM DB2 database'}
+                        {dataAgent.connectionType?.toLowerCase() === 'databricks' && ' - Lakehouse platform'}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -145,39 +168,64 @@ export default function CreateEnvironmentModal({
                 />
               </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Host *
-              </label>
-              <input
-                type="text"
-                value={newEnvironment.connectionConfig.host}
-                onChange={(e) => onChange({ 
-                  ...newEnvironment, 
-                  connectionConfig: { ...newEnvironment.connectionConfig, host: e.target.value }
-                })}
-                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                placeholder="localhost"
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Custom AI Prompt
+                </label>
+                <textarea
+                  value={newEnvironment.customPrompt}
+                  onChange={(e) => onChange({ ...newEnvironment, customPrompt: e.target.value })}
+                  rows={4}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Enter custom instructions for AI analysis (optional). This will guide how AI analyzes and describes data in this environment."
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Optional: Environment-specific AI instructions. Perfect for testing different prompts in development before promoting to production.
+                </p>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Port
-              </label>
-              <input
-                type="text"
-                value={newEnvironment.connectionConfig.port}
-                onChange={(e) => onChange({ 
-                  ...newEnvironment, 
-                  connectionConfig: { ...newEnvironment.connectionConfig, port: e.target.value }
-                })}
-                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                placeholder="5432"
-              />
+          {/* Host/Port section - hide for BigQuery */}
+          {dataAgent.connectionType?.toLowerCase() !== 'bigquery' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Host *
+                </label>
+                <input
+                  type="text"
+                  value={newEnvironment.connectionConfig.host}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    connectionConfig: { ...newEnvironment.connectionConfig, host: e.target.value }
+                  })}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="localhost"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Port
+                </label>
+                <input
+                  type="text"
+                  value={newEnvironment.connectionConfig.port}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    connectionConfig: { ...newEnvironment.connectionConfig, port: e.target.value }
+                  })}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder={
+                    dataAgent.connectionType?.toLowerCase() === 'postgres' || dataAgent.connectionType?.toLowerCase() === 'postgresql' ? '5432' :
+                    dataAgent.connectionType?.toLowerCase() === 'mysql' ? '3306' :
+                    dataAgent.connectionType?.toLowerCase() === 'mssql' || dataAgent.connectionType?.toLowerCase() === 'sqlserver' ? '1433' :
+                    dataAgent.connectionType?.toLowerCase() === 'db2' ? '50000' :
+                    '5432'
+                  }
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -192,7 +240,7 @@ export default function CreateEnvironmentModal({
                   connectionConfig: { ...newEnvironment.connectionConfig, database: e.target.value }
                 })}
                 className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                placeholder="mydatabase"
+                placeholder={dataAgent.connectionType === 'bigquery' ? 'dataset-id' : 'mydatabase'}
               />
             </div>
 
@@ -213,39 +261,212 @@ export default function CreateEnvironmentModal({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Username *
-              </label>
-              <input
-                type="text"
-                value={newEnvironment.credentials.username}
-                onChange={(e) => onChange({ 
-                  ...newEnvironment, 
-                  credentials: { ...newEnvironment.credentials, username: e.target.value }
-                })}
-                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                placeholder="username"
-              />
-            </div>
+          {/* BigQuery specific fields */}
+          {dataAgent.connectionType?.toLowerCase() === 'bigquery' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Project ID *
+                </label>
+                <input
+                  type="text"
+                  value={newEnvironment.connectionConfig.projectId || ''}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    connectionConfig: { ...newEnvironment.connectionConfig, projectId: e.target.value }
+                  })}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="my-gcp-project"
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Password *
-              </label>
-              <input
-                type="password"
-                value={newEnvironment.credentials.password}
-                onChange={(e) => onChange({ 
-                  ...newEnvironment, 
-                  credentials: { ...newEnvironment.credentials, password: e.target.value }
-                })}
-                className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                placeholder="password"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Location/Region
+                </label>
+                <input
+                  type="text"
+                  value={newEnvironment.connectionConfig.location || ''}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    connectionConfig: { ...newEnvironment.connectionConfig, location: e.target.value }
+                  })}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="us-central1"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Service Account JSON *
+                </label>
+                <textarea
+                  value={newEnvironment.connectionConfig.serviceAccountJson || ''}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    connectionConfig: { ...newEnvironment.connectionConfig, serviceAccountJson: e.target.value }
+                  })}
+                  rows={6}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-xs"
+                  placeholder='{"type": "service_account", "project_id": "your-project", ...}'
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  Paste the complete service account JSON key content
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* SSL/Security Configuration for PostgreSQL, MySQL, SQL Server */}
+          {['postgres', 'postgresql', 'mysql', 'mssql', 'sqlserver'].includes(dataAgent.connectionType?.toLowerCase()) && (
+            <div className="space-y-4">
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
+                  Security & SSL Configuration
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* SSL Mode for PostgreSQL/MySQL */}
+                  {['postgres', 'postgresql', 'mysql'].includes(dataAgent.connectionType?.toLowerCase()) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        SSL Mode
+                      </label>
+                      <select
+                        value={newEnvironment.connectionConfig.sslMode || 'disable'}
+                        onChange={(e) => onChange({ 
+                          ...newEnvironment, 
+                          connectionConfig: { 
+                            ...newEnvironment.connectionConfig, 
+                            sslMode: e.target.value as 'disable' | 'require' | 'verify-ca' | 'verify-full'
+                          }
+                        })}
+                        className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      >
+                        <option value="disable">Disable</option>
+                        <option value="require">Require</option>
+                        <option value="verify-ca">Verify CA</option>
+                        <option value="verify-full">Verify Full</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Encryption for SQL Server */}
+                  {['mssql', 'sqlserver'].includes(dataAgent.connectionType?.toLowerCase()) && (
+                    <>
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="encrypt"
+                          checked={newEnvironment.connectionConfig.encrypt || false}
+                          onChange={(e) => onChange({ 
+                            ...newEnvironment, 
+                            connectionConfig: { ...newEnvironment.connectionConfig, encrypt: e.target.checked }
+                          })}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="encrypt" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                          Encrypt Connection
+                        </label>
+                      </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="trustServerCertificate"
+                          checked={newEnvironment.connectionConfig.trustServerCertificate || false}
+                          onChange={(e) => onChange({ 
+                            ...newEnvironment, 
+                            connectionConfig: { ...newEnvironment.connectionConfig, trustServerCertificate: e.target.checked }
+                          })}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="trustServerCertificate" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                          Trust Server Certificate
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Connection Timeout (seconds)
+                    </label>
+                    <input
+                      type="number"
+                      value={newEnvironment.connectionConfig.connectionTimeout || ''}
+                      onChange={(e) => onChange({ 
+                        ...newEnvironment, 
+                        connectionConfig: { 
+                          ...newEnvironment.connectionConfig, 
+                          connectionTimeout: e.target.value ? parseInt(e.target.value) : undefined 
+                        }
+                      })}
+                      className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      placeholder="30"
+                    />
+                  </div>
+
+                  {['mssql', 'sqlserver'].includes(dataAgent.connectionType?.toLowerCase()) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Application Name
+                      </label>
+                      <input
+                        type="text"
+                        value={newEnvironment.connectionConfig.applicationName || ''}
+                        onChange={(e) => onChange({ 
+                          ...newEnvironment, 
+                          connectionConfig: { ...newEnvironment.connectionConfig, applicationName: e.target.value }
+                        })}
+                        className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        placeholder="AutogentMCP"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Credentials section - show only for non-BigQuery */}
+          {dataAgent.connectionType?.toLowerCase() !== 'bigquery' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Username *
+                </label>
+                <input
+                  type="text"
+                  value={newEnvironment.credentials.username}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    credentials: { ...newEnvironment.credentials, username: e.target.value }
+                  })}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="username"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Password *
+                </label>
+                <input
+                  type="password"
+                  value={newEnvironment.credentials.password}
+                  onChange={(e) => onChange({ 
+                    ...newEnvironment, 
+                    credentials: { ...newEnvironment.credentials, password: e.target.value }
+                  })}
+                  className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="password"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Test Connection Section */}
           <div className="space-y-3">
@@ -314,7 +535,10 @@ export default function CreateEnvironmentModal({
 
           <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md">
             <p className="text-sm text-blue-800 dark:text-blue-200">
-              🔒 These credentials will be securely stored in your configured vault. Only a reference will be stored in the database.
+              🔒 {dataAgent.connectionType?.toLowerCase() === 'bigquery' 
+                ? 'The service account JSON will be securely stored in your configured vault.'
+                : 'These credentials will be securely stored in your configured vault. Only a reference will be stored in the database.'
+              }
             </p>
           </div>
           </>

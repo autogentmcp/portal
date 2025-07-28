@@ -4,6 +4,7 @@ interface DataAgentHeaderProps {
   dataAgent: DataAgent;
   onCreateEnvironment: () => void;
   onDeleteAgent: () => void;
+  onEditAgent: () => void;
   deletingAgent: boolean;
 }
 
@@ -11,6 +12,7 @@ export default function DataAgentHeader({
   dataAgent,
   onCreateEnvironment,
   onDeleteAgent,
+  onEditAgent,
   deletingAgent
 }: DataAgentHeaderProps) {
   // Check if all environment types are created
@@ -38,6 +40,12 @@ export default function DataAgentHeader({
             </div>
           </div>
           <div className="flex gap-3">
+            <button
+              onClick={onEditAgent}
+              className="px-4 py-2 text-sm font-medium text-blue-600 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-600 rounded-md hover:bg-blue-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Edit Data Agent
+            </button>
             <button
               onClick={onCreateEnvironment}
               disabled={allTypesCreated}

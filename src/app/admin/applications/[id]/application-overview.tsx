@@ -112,7 +112,9 @@ const EndpointsDisplay = ({ endpoints }: { endpoints: Endpoint[] }) => {
                           {Object.entries(parsedQueryParams).map(([key, type]) => (
                             <div key={key} className="flex flex-col">
                               <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{key}</span>
-                              <span className="text-xs text-gray-500 dark:text-gray-400">{type as string}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {typeof type === 'object' ? (type as any)?.type || JSON.stringify(type) : String(type)}
+                              </span>
                             </div>
                           ))}
                         </div>
