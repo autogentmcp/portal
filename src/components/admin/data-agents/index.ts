@@ -9,6 +9,8 @@ export { default as RelationshipsTab } from './RelationshipsTab';
 export { default as CreateEnvironmentModal } from './CreateEnvironmentModal';
 export { default as ImportTablesModal } from './ImportTablesModal';
 export { default as NoEnvironmentState } from './NoEnvironmentState';
+export { EditDataAgentModal } from './EditDataAgentModal';
+export { EditEnvironmentModal } from './EditEnvironmentModal';
 
 // Re-export types
 export * from './types';

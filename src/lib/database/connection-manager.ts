@@ -10,10 +10,13 @@ export interface DatabaseConfig {
   projectId?: string; // For BigQuery
   serverHostname?: string; // For Databricks
   server?: string; // For SQL Server
-  ssl?: boolean;
+  ssl?: boolean; // Legacy support
+  sslMode?: string; // PostgreSQL/MySQL SSL modes: disable, require, verify-ca, verify-full
   encrypt?: boolean;
   trustServerCertificate?: boolean;
   instance?: string;
+  connectionTimeout?: number;
+  applicationName?: string;
 }
 
 export interface DatabaseCredentials {
@@ -175,10 +178,66 @@ export class DatabaseConnectionManager {
     }
   }
 
+  /**
+   * Query sample data from a table
+   */
+  static async querySampleData(
+    connectionType: string,
+    config: DatabaseConfig,
+    credentials: DatabaseCredentials,
+    tableName: string,
+    schemaName?: string,
+    limit: number = 10
+  ): Promise<any[]> {
+    
+    try {
+      switch (connectionType.toLowerCase()) {
+        case 'postgres':
+        case 'postgresql':
+          return await this.queryPostgresSampleData(config, credentials, tableName, schemaName, limit);
+        
+        case 'mysql':
+          return await this.queryMySQLSampleData(config, credentials, tableName, schemaName, limit);
+        
+        case 'mssql':
+        case 'sqlserver':
+          return await this.queryMSSQLSampleData(config, credentials, tableName, schemaName, limit);
+        
+        case 'bigquery':
+          return await this.queryBigQuerySampleData(config, credentials, tableName, schemaName, limit);
+        
+        case 'databricks':
+          return await this.queryDatabricksSampleData(config, credentials, tableName, schemaName, limit);
+        
+        case 'db2':
+          return await this.queryDB2SampleData(config, credentials, tableName, schemaName, limit);
+        
+        default:
+          throw new Error(`Connection type '${connectionType}' is not supported`);
+      }
+    } catch (error) {
+      throw new Error(`Failed to query sample data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   // PostgreSQL connection methods
   private static async testPostgresConnection(config: DatabaseConfig, credentials: DatabaseCredentials) {
     try {
       const { Client } = require('pg');
+      
+      let sslConfig: false | object = false;
+      if (config.sslMode && config.sslMode !== 'disable') {
+        sslConfig = { mode: config.sslMode };
+        
+        if (config.sslMode === 'require') {
+          sslConfig = { rejectUnauthorized: false };
+        } else {
+          sslConfig = {
+            mode: config.sslMode,
+            rejectUnauthorized: config.sslMode === 'verify-full'
+          };
+        }
+      }
       
       const client = new Client({
         host: config.host,
@@ -186,8 +245,8 @@ export class DatabaseConnectionManager {
         database: config.database,
         user: credentials?.username || credentials?.user,
         password: credentials?.password,
-        ssl: config.ssl || false,
-        connectionTimeoutMillis: 5000,
+        ssl: sslConfig,
+        connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
       });
 
       await client.connect();
@@ -210,14 +269,28 @@ export class DatabaseConnectionManager {
   private static async getPostgresTables(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<DatabaseTable[]> {
     const { Client } = require('pg');
     
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      sslConfig = { mode: config.sslMode };
+      
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const client = new Client({
       host: config.host,
       port: config.port || 5432,
       database: config.database,
       user: credentials?.username || credentials?.user,
       password: credentials?.password,
-      ssl: config.ssl || false,
-      connectionTimeoutMillis: 10000,
+      ssl: sslConfig,
+      connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
     });
 
     try {
@@ -253,14 +326,28 @@ export class DatabaseConnectionManager {
   private static async getPostgresColumns(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string): Promise<DatabaseColumn[]> {
     const { Client } = require('pg');
     
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      sslConfig = { mode: config.sslMode };
+      
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const client = new Client({
       host: config.host,
       port: config.port || 5432,
       database: config.database,
       user: credentials?.username || credentials?.user,
       password: credentials?.password,
-      ssl: config.ssl || false,
-      connectionTimeoutMillis: 10000,
+      ssl: sslConfig,
+      connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
     });
 
     try {
@@ -298,10 +385,62 @@ export class DatabaseConnectionManager {
     }
   }
 
+  private static async queryPostgresSampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
+    const { Client } = require('pg');
+    
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      sslConfig = { mode: config.sslMode };
+      
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
+    const client = new Client({
+      host: config.host,
+      port: config.port || 5432,
+      database: config.database,
+      user: credentials?.username || credentials?.user,
+      password: credentials?.password,
+      ssl: sslConfig,
+      connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
+    });
+
+    try {
+      await client.connect();
+      
+      const fullTableName = schemaName ? `"${schemaName}"."${tableName}"` : `"${tableName}"`;
+      const query = `SELECT * FROM ${fullTableName} LIMIT $1`;
+      
+      const result = await client.query(query, [limit]);
+      return result.rows;
+    } finally {
+      await client.end();
+    }
+  }
+
   // MySQL connection methods
   private static async testMySQLConnection(config: DatabaseConfig, credentials: DatabaseCredentials) {
     try {
       const mysql = require('mysql2/promise');
+      
+      let sslConfig: false | object = false;
+      if (config.sslMode && config.sslMode !== 'disable') {
+        if (config.sslMode === 'require') {
+          sslConfig = { rejectUnauthorized: false };
+        } else {
+          sslConfig = {
+            mode: config.sslMode,
+            rejectUnauthorized: config.sslMode === 'verify-full'
+          };
+        }
+      }
       
       const connection = await mysql.createConnection({
         host: config.host,
@@ -309,8 +448,8 @@ export class DatabaseConnectionManager {
         database: config.database,
         user: credentials?.username || credentials?.user,
         password: credentials?.password,
-        ssl: config.ssl || false,
-        connectTimeout: 5000,
+        ssl: sslConfig,
+        connectTimeout: (config.connectionTimeout || 30) * 1000,
       });
 
       await connection.execute('SELECT 1');
@@ -332,14 +471,26 @@ export class DatabaseConnectionManager {
   private static async getMySQLTables(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<DatabaseTable[]> {
     const mysql = require('mysql2/promise');
     
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const connection = await mysql.createConnection({
       host: config.host,
       port: config.port || 3306,
       database: config.database,
       user: credentials?.username || credentials?.user,
       password: credentials?.password,
-      ssl: config.ssl || false,
-      connectTimeout: 10000,
+      ssl: sslConfig,
+      connectTimeout: (config.connectionTimeout || 30) * 1000,
     });
 
     try {
@@ -369,14 +520,26 @@ export class DatabaseConnectionManager {
   private static async getMySQLColumns(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string): Promise<DatabaseColumn[]> {
     const mysql = require('mysql2/promise');
     
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const connection = await mysql.createConnection({
       host: config.host,
       port: config.port || 3306,
       database: config.database,
       user: credentials?.username || credentials?.user,
       password: credentials?.password,
-      ssl: config.ssl || false,
-      connectTimeout: 10000,
+      ssl: sslConfig,
+      connectTimeout: (config.connectionTimeout || 30) * 1000,
     });
 
     try {
@@ -411,6 +574,40 @@ export class DatabaseConnectionManager {
     }
   }
 
+  private static async queryMySQLSampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
+    const mysql = require('mysql2/promise');
+    
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
+    const connection = await mysql.createConnection({
+      host: config.host,
+      port: config.port || 3306,
+      database: config.database,
+      user: credentials?.username || credentials?.user,
+      password: credentials?.password,
+      ssl: sslConfig,
+      connectTimeout: (config.connectionTimeout || 30) * 1000,
+    });
+
+    try {
+      const fullTableName = schemaName ? `\`${schemaName}\`.\`${tableName}\`` : `\`${tableName}\``;
+      const [rows] = await connection.execute(`SELECT * FROM ${fullTableName} LIMIT ?`, [limit]);
+      return rows as any[];
+    } finally {
+      await connection.end();
+    }
+  }
+
   // MSSQL connection methods
   private static async testMSSQLConnection(config: DatabaseConfig, credentials: DatabaseCredentials) {
     try {
@@ -427,9 +624,10 @@ export class DatabaseConnectionManager {
           trustServerCertificate: config.trustServerCertificate || false,
           enableArithAbort: true,
           instanceName: config.instance || undefined,
+          ...(config.applicationName && { appName: config.applicationName }),
         },
-        connectionTimeout: 5000,
-        requestTimeout: 5000,
+        connectionTimeout: (config.connectionTimeout || 30) * 1000,
+        requestTimeout: (config.connectionTimeout || 30) * 1000,
       };
 
       const pool = await sql.connect(poolConfig);
@@ -463,9 +661,10 @@ export class DatabaseConnectionManager {
         trustServerCertificate: config.trustServerCertificate || false,
         enableArithAbort: true,
         instanceName: config.instance || undefined,
+        ...(config.applicationName && { appName: config.applicationName }),
       },
-      connectionTimeout: 10000,
-      requestTimeout: 10000,
+      connectionTimeout: (config.connectionTimeout || 30) * 1000,
+      requestTimeout: (config.connectionTimeout || 30) * 1000,
     };
 
     const pool = await sql.connect(poolConfig);
@@ -510,9 +709,10 @@ export class DatabaseConnectionManager {
         trustServerCertificate: config.trustServerCertificate || false,
         enableArithAbort: true,
         instanceName: config.instance || undefined,
+        ...(config.applicationName && { appName: config.applicationName }),
       },
-      connectionTimeout: 10000,
-      requestTimeout: 10000,
+      connectionTimeout: (config.connectionTimeout || 30) * 1000,
+      requestTimeout: (config.connectionTimeout || 30) * 1000,
     };
 
     const pool = await sql.connect(poolConfig);
@@ -553,6 +753,56 @@ export class DatabaseConnectionManager {
     } finally {
       await pool.close();
     }
+  }
+
+  private static async queryMSSQLSampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
+    const sql = require('mssql');
+    
+    const poolConfig = {
+      server: config.server || config.host,
+      port: config.port || 1433,
+      database: config.database,
+      user: credentials?.username || credentials?.user,
+      password: credentials?.password,
+      options: {
+        encrypt: config.encrypt !== false,
+        trustServerCertificate: config.trustServerCertificate || false,
+        enableArithAbort: true,
+        instanceName: config.instance || undefined,
+        ...(config.applicationName && { appName: config.applicationName }),
+      },
+      connectionTimeout: (config.connectionTimeout || 30) * 1000,
+      requestTimeout: (config.connectionTimeout || 30) * 1000,
+    };
+
+    const pool = await sql.connect(poolConfig);
+    
+    try {
+      const fullTableName = schemaName ? `[${schemaName}].[${tableName}]` : `[${tableName}]`;
+      const result = await pool.request().query(`SELECT TOP (${limit}) * FROM ${fullTableName}`);
+      return result.recordset;
+    } finally {
+      await pool.close();
+    }
+  }
+
+  // Placeholder methods for other databases (can be implemented later)
+  private static async queryBigQuerySampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
+    // TODO: Implement BigQuery sample data query
+    console.log('BigQuery sample data not implemented yet');
+    return [];
+  }
+
+  private static async queryDatabricksSampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
+    // TODO: Implement Databricks sample data query
+    console.log('Databricks sample data not implemented yet');
+    return [];
+  }
+
+  private static async queryDB2SampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
+    // TODO: Implement DB2 sample data query
+    console.log('DB2 sample data not implemented yet');
+    return [];
   }
 
   // BigQuery connection methods

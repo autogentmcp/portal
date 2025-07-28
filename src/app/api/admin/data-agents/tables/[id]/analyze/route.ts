@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { getLLMService } from '@/lib/llm';
+import { DatabaseConnectionManager } from '@/lib/database/connection-manager';
 
 // POST /api/admin/data-agents/tables/[id]/analyze - Analyze table with LLM
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  console.log('🔍 OLD ROUTE: Table analysis request received for tableId:', (await params).id);
+  
   try {
     const user = await getAuthUser(request);
     if (!user || user.role !== 'ADMIN') {
@@ -59,33 +62,56 @@ export async function POST(
       // Analyze table
       const tableAnalysis = await llmService.analyzeTable(analysisRequest);
 
-      // Analyze each field individually for detailed insights
+      // Analyze each field individually with brief structured descriptions
+      console.log('🧠 Starting AI column analysis for', table.columns.length, 'columns...');
       const fieldAnalyses = await Promise.all(
         table.columns.map(async (field: any) => {
           try {
-            const fieldAnalysis = await llmService.analyzeField({
+            console.log(`🔍 Analyzing column: ${field.columnName} (${field.dataType})`);
+            
+            // Use the new brief column description method
+            const fieldAnalysis = await llmService.generateBriefColumnDescription({
               tableName: table.tableName,
-              fieldName: field.columnName,
+              columnName: field.columnName,
               dataType: field.dataType,
               isNullable: field.isNullable,
               isPrimaryKey: field.isPrimaryKey,
               sampleValues: Array.isArray(sampleData[field.columnName]) ? sampleData[field.columnName] as string[] : [],
-              rowCount: sampleData.rowCount,
+              customPrompt: table.environment?.customPrompt || undefined,
+            });
+            
+            console.log(`✅ AI analysis complete for ${field.columnName}:`, {
+              description: fieldAnalysis.description,
+              exampleValue: fieldAnalysis.exampleValue,
+              valueType: fieldAnalysis.valueType
             });
 
-            // Update field with LLM analysis
+            // Save structured data in aiDescription as JSON
+            const structuredAiDescription = JSON.stringify({
+              purpose: fieldAnalysis.description,
+              sample_value: fieldAnalysis.exampleValue,
+              data_pattern: fieldAnalysis.valueType
+            });
+            
+            console.log(`💾 Updating database for column ${field.columnName} with:`, structuredAiDescription);
+
+            // Update field with structured AI analysis
             await prisma.dataAgentTableColumn.update({
               where: { id: field.id },
-              data: { aiDescription: fieldAnalysis.content },
+              data: { aiDescription: structuredAiDescription },
             });
+            
+            console.log(`✅ Column ${field.columnName} updated in database`);
 
             return {
               fieldId: field.id,
               fieldName: field.columnName,
-              analysis: fieldAnalysis.content,
+              analysis: fieldAnalysis.description,
+              exampleValue: fieldAnalysis.exampleValue,
+              valueType: fieldAnalysis.valueType,
             };
           } catch (error) {
-            console.error(`Error analyzing field ${field.columnName}:`, error);
+            console.error(`❌ Error analyzing field ${field.columnName}:`, error);
             return {
               fieldId: field.id,
               fieldName: field.columnName,
@@ -208,14 +234,24 @@ async function getSampleData(table: any): Promise<SampleDataResult> {
 async function getPostgresSampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
   const { Client } = require('pg');
   
+  // Handle SSL configuration based on sslMode
+  let sslConfig: any = false;
+  if (config.sslMode && config.sslMode !== 'disable') {
+    sslConfig = { mode: config.sslMode };
+    // For require mode, just enable SSL
+    if (config.sslMode === 'require') {
+      sslConfig = true;
+    }
+  }
+  
   const client = new Client({
     host: config.host,
     port: parseInt(String(config.port || 5432)), // Ensure port is a number
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
-    ssl: config.ssl || false,
-    connectionTimeoutMillis: 10000,
+    ssl: sslConfig,
+    connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
   });
 
   try {
@@ -248,7 +284,17 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
         sampleData[column] = sampleResult.rows
           .map((row: any) => row[column])
           .filter((value: any) => value !== null && value !== undefined)
-          .map((value: any) => String(value))
+          .map((value: any) => {
+            // Better handling for complex data types
+            if (typeof value === 'object') {
+              try {
+                return JSON.stringify(value);
+              } catch {
+                return String(value);
+              }
+            }
+            return String(value);
+          })
           .slice(0, 20); // Limit to 20 sample values per column
       });
     }
@@ -277,14 +323,27 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
 async function getMySQLSampleData(config: any, credentials: any, tableName: string, schemaName?: string) {
   const mysql = require('mysql2/promise');
   
+  // Handle SSL configuration based on sslMode
+  let sslConfig: any = false;
+  if (config.sslMode && config.sslMode !== 'disable') {
+    if (config.sslMode === 'require') {
+      sslConfig = true;
+    } else {
+      sslConfig = {
+        mode: config.sslMode,
+        rejectUnauthorized: config.sslMode === 'verify-full'
+      };
+    }
+  }
+  
   const connection = await mysql.createConnection({
     host: config.host,
     port: parseInt(String(config.port || 3306)), // Ensure port is a number
     database: config.database,
     user: credentials?.username || credentials?.user,
     password: credentials?.password,
-    ssl: config.ssl || false,
-    connectTimeout: 10000,
+    ssl: sslConfig,
+    connectTimeout: (config.connectionTimeout || 30) * 1000,
   });
 
   try {
@@ -314,7 +373,17 @@ async function getMySQLSampleData(config: any, credentials: any, tableName: stri
         sampleData[column] = (sampleRows as any[])
           .map((row: any) => row[column])
           .filter((value: any) => value !== null && value !== undefined)
-          .map((value: any) => String(value))
+          .map((value: any) => {
+            // Better handling for complex data types
+            if (typeof value === 'object') {
+              try {
+                return JSON.stringify(value);
+              } catch {
+                return String(value);
+              }
+            }
+            return String(value);
+          })
           .slice(0, 20);
       });
     }
@@ -340,9 +409,10 @@ async function getMSSQLSampleData(config: any, credentials: any, tableName: stri
       trustServerCertificate: config.trustServerCertificate || false,
       enableArithAbort: true,
       instanceName: config.instance || undefined,
+      ...(config.applicationName && { appName: config.applicationName }),
     },
-    connectionTimeout: 10000,
-    requestTimeout: 10000,
+    connectionTimeout: (config.connectionTimeout || 30) * 1000,
+    requestTimeout: (config.connectionTimeout || 30) * 1000,
   };
 
   const pool = await sql.connect(poolConfig);
@@ -368,7 +438,17 @@ async function getMSSQLSampleData(config: any, credentials: any, tableName: stri
         sampleData[column] = sampleResult.recordset
           .map((row: any) => row[column])
           .filter((value: any) => value !== null && value !== undefined)
-          .map((value: any) => String(value))
+          .map((value: any) => {
+            // Better handling for complex data types
+            if (typeof value === 'object') {
+              try {
+                return JSON.stringify(value);
+              } catch {
+                return String(value);
+              }
+            }
+            return String(value);
+          })
           .slice(0, 20);
       });
     }
@@ -384,11 +464,34 @@ async function getBigQuerySampleData(config: any, credentials: any, tableName: s
   try {
     const { BigQuery } = require('@google-cloud/bigquery');
     
-    const bigquery = new BigQuery({
-      projectId: config.projectId,
-      keyFilename: credentials?.serviceAccountPath,
-      credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
-    });
+    // For BigQuery, the credentials should include serviceAccountJson
+    let bigqueryConfig: any = {
+      projectId: config.projectId || credentials?.projectId,
+    };
+
+    // Handle service account JSON - it could be in config or credentials
+    const serviceAccountJson = config.serviceAccountJson || credentials?.serviceAccountJson;
+    
+    if (serviceAccountJson) {
+      try {
+        // Parse the service account JSON if it's a string
+        const parsedCredentials = typeof serviceAccountJson === 'string' 
+          ? JSON.parse(serviceAccountJson) 
+          : serviceAccountJson;
+        
+        bigqueryConfig.credentials = parsedCredentials;
+      } catch (parseError) {
+        console.error('JSON parsing error in sample data:', parseError);
+        return {};
+      }
+    } else if (credentials?.serviceAccountPath) {
+      bigqueryConfig.keyFilename = credentials.serviceAccountPath;
+    } else {
+      console.error('No BigQuery credentials found for sample data');
+      return {};
+    }
+
+    const bigquery = new BigQuery(bigqueryConfig);
 
     let finalTableName: string;
     if (schemaName) {
@@ -421,7 +524,17 @@ async function getBigQuerySampleData(config: any, credentials: any, tableName: s
         sampleData[column] = rows
           .map((row: any) => row[column])
           .filter((value: any) => value !== null && value !== undefined)
-          .map((value: any) => String(value))
+          .map((value: any) => {
+            // Better handling for complex data types
+            if (typeof value === 'object') {
+              try {
+                return JSON.stringify(value);
+              } catch {
+                return String(value);
+              }
+            }
+            return String(value);
+          })
           .slice(0, 20);
       });
     }
@@ -527,7 +640,17 @@ async function getDB2SampleData(config: any, credentials: any, tableName: string
               sampleData[column] = result
                 .map((row: any) => row[column])
                 .filter((value: any) => value !== null && value !== undefined)
-                .map((value: any) => String(value))
+                .map((value: any) => {
+                  // Better handling for complex data types
+                  if (typeof value === 'object') {
+                    try {
+                      return JSON.stringify(value);
+                    } catch {
+                      return String(value);
+                    }
+                  }
+                  return String(value);
+                })
                 .slice(0, 20);
             });
             

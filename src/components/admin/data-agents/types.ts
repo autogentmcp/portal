@@ -99,12 +99,27 @@ export const ENVIRONMENT_TYPES: { value: EnvironmentType; label: string; descrip
 export interface NewEnvironment {
   name?: string; // Will be auto-generated from environmentType
   description: string;
+  customPrompt: string;
   environmentType: EnvironmentType;
   connectionConfig: {
     host: string;
     port: string;
     database: string;
     schema: string;
+    // SSL/Security options
+    ssl?: boolean;
+    sslMode?: 'disable' | 'require' | 'verify-ca' | 'verify-full';
+    trustServerCertificate?: boolean;
+    encrypt?: boolean;
+    // Connection settings
+    connectionTimeout?: number;
+    // BigQuery specific
+    projectId?: string;
+    location?: string;
+    serviceAccountJson?: string;
+    // Additional options
+    applicationName?: string;
+    currentSchema?: string;
   };
   credentials: {
     username: string;

@@ -7,18 +7,11 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { environmentType, description, connectionConfig, connectionTested } = await request.json();
+    const { environmentType, description, customPrompt, connectionConfig, connectionTested } = await request.json();
     const { id } = await params;
     const dataAgentId = id;
 
-    if (!environmentType || !connectionConfig?.host || !connectionConfig?.database) {
-      return NextResponse.json(
-        { error: 'Environment type, host, and database are required' },
-        { status: 400 }
-      );
-    }
-
-    // Get the original data agent to copy properties
+    // Get the original data agent to get connection type
     const dataAgent = await prisma.dataAgent.findUnique({
       where: { id: dataAgentId }
     });
@@ -30,9 +23,37 @@ export async function POST(
       );
     }
 
+    // Validate required fields based on connection type
+    const connectionType = dataAgent.connectionType?.toLowerCase();
+    
+    if (!environmentType || !connectionConfig?.database) {
+      return NextResponse.json(
+        { error: 'Environment type and database are required' },
+        { status: 400 }
+      );
+    }
+
+    // Additional validation for BigQuery
+    if (connectionType === 'bigquery') {
+      if (!connectionConfig.projectId || !connectionConfig.serviceAccountJson) {
+        return NextResponse.json(
+          { error: 'Project ID and Service Account JSON are required for BigQuery' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // For other databases, require host
+      if (!connectionConfig.host) {
+        return NextResponse.json(
+          { error: 'Host is required for this database type' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Store credentials in vault
     let vaultKey = null;
-    let finalConnectionConfig = connectionConfig;
+    let finalConnectionConfig = { ...connectionConfig };
     
     try {
       const { SecretManager } = await import('@/lib/secrets');
@@ -42,26 +63,56 @@ export async function POST(
       if (secretManager.hasProvider()) {
         vaultKey = `data-agent-${dataAgentId}-env-${crypto.randomUUID()}-${Date.now()}`;
         
-        const credentialsToStore = {
-          host: connectionConfig.host,
-          port: String(connectionConfig.port || '5432'),
-          database: connectionConfig.database,
-          username: String(connectionConfig.username || ''),
-          password: String(connectionConfig.password || '')
-        };
+        let credentialsToStore;
+        
+        if (connectionType === 'bigquery') {
+          // For BigQuery, store the service account JSON and project info
+          credentialsToStore = {
+            projectId: connectionConfig.projectId,
+            serviceAccountJson: connectionConfig.serviceAccountJson,
+            ...(connectionConfig.location && { location: connectionConfig.location })
+          };
+          
+          // Remove sensitive data from config stored in DB
+          delete finalConnectionConfig.serviceAccountJson;
+        } else {
+          // For other databases, store connection credentials
+          credentialsToStore = {
+            host: connectionConfig.host,
+            port: String(connectionConfig.port || getDefaultPort(connectionType)),
+            database: connectionConfig.database,
+            username: String(connectionConfig.username || ''),
+            password: String(connectionConfig.password || ''),
+            ...(connectionConfig.schema && { schema: connectionConfig.schema })
+          };
+          
+          // Remove sensitive data from config stored in DB
+          delete finalConnectionConfig.username;
+          delete finalConnectionConfig.password;
+        }
         
         await secretManager.storeCredentials(vaultKey, credentialsToStore);
-        
-        // Store config without sensitive data
-        finalConnectionConfig = {
-          host: connectionConfig.host,
-          port: String(connectionConfig.port || '5432'),
-          database: connectionConfig.database,
-          schema: connectionConfig.schema || ''
-        };
       }
     } catch (error) {
       console.error('Failed to store credentials in vault:', error);
+    }
+
+    // Helper function to get default port
+    function getDefaultPort(connectionType: string): string {
+      switch (connectionType) {
+        case 'postgres':
+        case 'postgresql':
+          return '5432';
+        case 'mysql':
+          return '3306';
+        case 'mssql':
+        case 'sqlserver':
+          return '1433';
+        case 'db2':
+          return '50000';
+        default:
+          return '5432';
+      }
     }
 
     // Create environment in the proper Environment table
@@ -73,11 +124,22 @@ export async function POST(
       data: {
         name: environmentType,
         description: description || null,
+        customPrompt: customPrompt || null,
         status: initialStatus,
         healthStatus: initialHealthStatus,
         environmentType: 'DATA_AGENT', // Set the type to DATA_AGENT
         dataAgentId: dataAgentId,       // Link to the data agent
-        connectionConfig: finalConnectionConfig,
+        connectionConfig: {
+          ...finalConnectionConfig,
+          // Store additional configuration options
+          ...(connectionConfig.sslMode && { sslMode: connectionConfig.sslMode }),
+          ...(connectionConfig.encrypt !== undefined && { encrypt: connectionConfig.encrypt }),
+          ...(connectionConfig.trustServerCertificate !== undefined && { trustServerCertificate: connectionConfig.trustServerCertificate }),
+          ...(connectionConfig.connectionTimeout && { connectionTimeout: connectionConfig.connectionTimeout }),
+          ...(connectionConfig.requestTimeout && { requestTimeout: connectionConfig.requestTimeout }),
+          ...(connectionConfig.commandTimeout && { commandTimeout: connectionConfig.commandTimeout }),
+          ...(connectionConfig.options && { options: connectionConfig.options })
+        },
         vaultKey,
         lastConnectedAt: connectionTested ? new Date() : null
       }

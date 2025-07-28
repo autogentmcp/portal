@@ -100,14 +100,24 @@ async function testPostgresConnection(connectionConfig: any, credentials: any) {
   try {
     const { Client } = await import('pg')
     
+    // Handle SSL configuration based on sslMode
+    let sslConfig: any = false;
+    if (connectionConfig.sslMode && connectionConfig.sslMode !== 'disable') {
+      sslConfig = { mode: connectionConfig.sslMode };
+      // For require mode, just enable SSL
+      if (connectionConfig.sslMode === 'require') {
+        sslConfig = true;
+      }
+    }
+    
     const client = new Client({
       host: connectionConfig.host,
       port: parseInt(connectionConfig.port) || 5432,
       database: connectionConfig.database,
       user: credentials.username,
       password: credentials.password,
-      connectionTimeoutMillis: 5000,
-      ssl: connectionConfig.ssl === 'true' ? { rejectUnauthorized: false } : false
+      connectionTimeoutMillis: (connectionConfig.connectionTimeout || 30) * 1000,
+      ssl: sslConfig
     })
     
     await client.connect()
@@ -134,14 +144,27 @@ async function testMySQLConnection(connectionConfig: any, credentials: any): Pro
   try {
     const mysql = await import('mysql2/promise')
     
+    // Handle SSL configuration based on sslMode
+    let sslConfig: any = false;
+    if (connectionConfig.sslMode && connectionConfig.sslMode !== 'disable') {
+      if (connectionConfig.sslMode === 'require') {
+        sslConfig = true;
+      } else {
+        sslConfig = {
+          mode: connectionConfig.sslMode,
+          rejectUnauthorized: connectionConfig.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const connection = await mysql.createConnection({
       host: connectionConfig.host,
       port: parseInt(connectionConfig.port) || 3306,
       database: connectionConfig.database,
       user: credentials.username,
       password: credentials.password,
-      connectTimeout: 5000,
-      ssl: connectionConfig.ssl === 'true' ? { rejectUnauthorized: false } : undefined
+      connectTimeout: (connectionConfig.connectionTimeout || 30) * 1000,
+      ssl: sslConfig
     })
     
     // Test basic query
@@ -173,11 +196,14 @@ async function testSQLServerConnection(connectionConfig: any, credentials: any):
       user: credentials.username,
       password: credentials.password,
       options: {
-        encrypt: connectionConfig.ssl === 'true',
-        trustServerCertificate: true,
-        connectTimeout: 5000,
-        requestTimeout: 5000
-      }
+        encrypt: connectionConfig.encrypt !== false,
+        trustServerCertificate: connectionConfig.trustServerCertificate || false,
+        enableArithAbort: true,
+        instanceName: connectionConfig.instance || undefined,
+        ...(connectionConfig.applicationName && { appName: connectionConfig.applicationName }),
+      },
+      connectionTimeout: (connectionConfig.connectionTimeout || 30) * 1000,
+      requestTimeout: (connectionConfig.connectionTimeout || 30) * 1000
     }
     
     const pool = new sql.ConnectionPool(config)
@@ -205,10 +231,40 @@ async function testBigQueryConnection(connectionConfig: any, credentials: any): 
   try {
     const { BigQuery } = await import('@google-cloud/bigquery')
     
-    const bigquery = new BigQuery({
-      projectId: connectionConfig.projectId,
-      keyFilename: credentials.keyFile, // Path to service account JSON
-    })
+    // For BigQuery, the credentials should include serviceAccountJson
+    let bigqueryConfig: any = {
+      projectId: connectionConfig.projectId || credentials?.projectId,
+    };
+
+    // Handle service account JSON - it could be in config or credentials
+    const serviceAccountJson = connectionConfig.serviceAccountJson || credentials?.serviceAccountJson;
+    
+    if (serviceAccountJson) {
+      try {
+        // Parse the service account JSON if it's a string
+        const parsedCredentials = typeof serviceAccountJson === 'string' 
+          ? JSON.parse(serviceAccountJson) 
+          : serviceAccountJson;
+        
+        bigqueryConfig.credentials = parsedCredentials;
+      } catch (parseError) {
+        return {
+          success: false,
+          message: 'Invalid service account JSON format',
+          error: parseError instanceof Error ? parseError.message : 'JSON parsing failed'
+        };
+      }
+    } else if (credentials?.keyFile) {
+      bigqueryConfig.keyFilename = credentials.keyFile;
+    } else {
+      return {
+        success: false,
+        message: 'BigQuery requires either service account JSON or service account key file path',
+        error: 'Missing authentication credentials'
+      };
+    }
+
+    const bigquery = new BigQuery(bigqueryConfig);
     
     // Test basic query
     const query = 'SELECT 1 as test'

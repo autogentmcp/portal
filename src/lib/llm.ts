@@ -53,6 +53,27 @@ export interface FieldAnalysisRequest {
   rowCount?: number;
 }
 
+export interface BriefColumnAnalysisRequest {
+  tableName: string;
+  columnName: string;
+  dataType: string;
+  isNullable: boolean;
+  isPrimaryKey: boolean;
+  sampleValues?: string[];
+  customPrompt?: string;
+}
+
+export interface BriefColumnAnalysisResponse {
+  description: string;
+  exampleValue: string;
+  valueType: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
 class LLMService {
   private client: OpenAI;
   private provider: string;
@@ -167,6 +188,66 @@ class LLMService {
       };
     } catch (error) {
       throw new Error(`LLM field analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async generateBriefColumnDescription(request: BriefColumnAnalysisRequest): Promise<BriefColumnAnalysisResponse> {
+    const prompt = this.buildBriefColumnAnalysisPrompt(
+      request.columnName,
+      request.dataType,
+      request.sampleValues || [],
+      request.customPrompt
+    );
+    
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        max_tokens: 100, // Very strict limit for brief JSON responses
+        temperature: 0.1, // Lower temperature for more consistent output
+      });
+
+      const content = response.choices[0]?.message?.content || '';
+      
+      // Parse the structured response
+      const parsed = this.parseBriefColumnResponse(content);
+      
+      if (parsed) {
+        return {
+          description: parsed.description,
+          exampleValue: parsed.exampleValue,
+          valueType: parsed.valueType,
+          usage: response.usage ? {
+            prompt_tokens: response.usage.prompt_tokens,
+            completion_tokens: response.usage.completion_tokens,
+            total_tokens: response.usage.total_tokens,
+          } : undefined,
+        };
+      } else {
+        // Fallback if parsing fails
+        return {
+          description: `${request.columnName.replace(/_/g, ' ').toLowerCase()} field`,
+          exampleValue: this.generateFallbackExample(request.dataType, request.sampleValues || []),
+          valueType: this.categorizeDataType(request.dataType),
+          usage: response.usage ? {
+            prompt_tokens: response.usage.prompt_tokens,
+            completion_tokens: response.usage.completion_tokens,
+            total_tokens: response.usage.total_tokens,
+          } : undefined,
+        };
+      }
+    } catch (error) {
+      // Fallback to basic description if AI fails
+      return {
+        description: `${request.columnName.replace(/_/g, ' ').toLowerCase()} field`,
+        exampleValue: this.generateFallbackExample(request.dataType, request.sampleValues || []),
+        valueType: this.categorizeDataType(request.dataType),
+      };
     }
   }
 
@@ -523,6 +604,159 @@ Format your response as:
     const end = endIndex === -1 ? content.length : endIndex;
     
     return content.substring(start, end).trim();
+  }
+
+  private buildBriefColumnAnalysisPrompt(columnName: string, dataType: string, sampleValues: string[], customPrompt?: string): string {
+    // Clean and limit sample values to prevent long strings
+    const cleanedSamples = sampleValues
+      .filter(val => val && val !== '[object Object]')
+      .map(val => {
+        // Truncate very long values (like password hashes)
+        if (val.length > 20) {
+          return val.substring(0, 17) + '...';
+        }
+        return val;
+      })
+      .slice(0, 2); // Only use first 2 samples
+
+    const sampleText = cleanedSamples.length > 0 
+      ? `Samples: ${cleanedSamples.join(', ')}`
+      : 'No samples';
+
+    let prompt = `Column: ${columnName} 
+${sampleText}`;
+
+    // Add custom prompt if provided
+    if (customPrompt && customPrompt.trim()) {
+      prompt += `\n\nCustom Instructions: ${customPrompt.trim()}`;
+    }
+
+    prompt += `
+
+Return ONLY valid JSON:
+{"purpose":"brief purpose (no data types)","sample_value":"short example","data_pattern":"pattern type"}
+
+Examples:
+{"purpose":"user identifier","sample_value":"user123","data_pattern":"alphanumeric"}
+{"purpose":"email address","sample_value":"user@domain.com","data_pattern":"email"}
+{"purpose":"user role","sample_value":"admin","data_pattern":"categorical"}
+{"purpose":"password hash","sample_value":"$2b$10...","data_pattern":"encrypted"}
+
+ONLY JSON, no other text.`;
+
+    return prompt;
+  }
+
+  private parseBriefColumnResponse(content: string): BriefColumnAnalysisResponse | null {
+    try {
+      // Clean the content to extract just the JSON
+      const cleanContent = content.trim();
+      
+      // Try to find JSON in the response
+      let jsonStr = cleanContent;
+      
+      // If wrapped in code blocks, extract the JSON
+      const codeBlockMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1].trim();
+      }
+      
+      // Handle truncated JSON - try to complete it
+      if (jsonStr.includes('"purpose"') && !jsonStr.endsWith('}')) {
+        // Try to find the last complete field and close the JSON
+        const lastQuote = jsonStr.lastIndexOf('"');
+        if (lastQuote > 0) {
+          // Find the start of the incomplete value
+          const beforeLastQuote = jsonStr.substring(0, lastQuote);
+          const lastColon = beforeLastQuote.lastIndexOf(':');
+          if (lastColon > 0) {
+            // Truncate to before the incomplete field and close the JSON
+            const beforeIncompleteField = jsonStr.substring(0, lastColon);
+            const lastComma = beforeIncompleteField.lastIndexOf(',');
+            if (lastComma > 0) {
+              jsonStr = jsonStr.substring(0, lastComma) + '}';
+            }
+          }
+        }
+      }
+      
+      // Parse the JSON
+      const parsed = JSON.parse(jsonStr);
+      
+      // Validate required fields for new structure
+      if (!parsed.purpose || !parsed.sample_value || !parsed.data_pattern) {
+        return null;
+      }
+
+      // Convert to the expected response format - use just the purpose as description
+      return {
+        description: parsed.purpose, // Just the purpose, not the full JSON
+        exampleValue: parsed.sample_value,
+        valueType: parsed.data_pattern
+      };
+    } catch (error) {
+      console.warn('Failed to parse brief column JSON response:', error);
+      console.warn('Raw content:', content);
+      return null;
+    }
+  }
+
+  private generateFallbackExample(dataType: string, sampleValues: string[]): string {
+    // Don't use real sample values to avoid storing sensitive data
+    const typeMap: { [key: string]: string } = {
+      'text': 'sample_text',
+      'varchar': 'sample_text',
+      'string': 'sample_text',
+      'integer': '12345',
+      'int': '12345',
+      'number': '12345',
+      'decimal': '123.45',
+      'float': '123.45',
+      'boolean': 'true',
+      'date': '2024-01-01',
+      'datetime': '2024-01-01 12:00:00',
+      'timestamp': '2024-01-01 12:00:00',
+      'email': 'user@example.com',
+      'phone': '123-456-7890',
+      'id': 'ID_12345',
+      'uuid': 'uuid-123-456',
+      'name': 'sample_name',
+      'address': 'sample_address'
+    };
+
+    const lowerDataType = dataType.toLowerCase();
+    
+    // Check for common column name patterns to provide better generic examples
+    if (lowerDataType.includes('email')) return 'user@example.com';
+    if (lowerDataType.includes('phone')) return '123-456-7890';
+    if (lowerDataType.includes('id') || lowerDataType.includes('key')) return 'ID_12345';
+    if (lowerDataType.includes('name')) return 'sample_name';
+    if (lowerDataType.includes('address')) return 'sample_address';
+    if (lowerDataType.includes('url')) return 'https://example.com';
+    
+    return typeMap[lowerDataType] || 'sample_value';
+  }
+
+  private categorizeDataType(dataType: string): string {
+    const type = dataType.toLowerCase();
+    
+    if (type.includes('text') || type.includes('varchar') || type.includes('char')) {
+      return 'text';
+    }
+    if (type.includes('int') || type.includes('number')) {
+      return 'number';
+    }
+    if (type.includes('decimal') || type.includes('float') || type.includes('double')) {
+      return 'decimal';
+    }
+    if (type.includes('date') || type.includes('time')) {
+      return 'date';
+    }
+    if (type.includes('bool')) {
+      return 'boolean';
+    }
+    
+    return 'text'; // Default fallback
   }
 }
 

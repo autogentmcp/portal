@@ -26,6 +26,7 @@ import NoEnvironmentState from "@/components/admin/data-agents/NoEnvironmentStat
 import EditCredentialsModal from "@/components/admin/data-agents/EditCredentialsModal";
 import EditTableModal from "@/components/admin/data-agents/EditTableModal";
 import EditRelationshipModal from "@/components/admin/data-agents/EditRelationshipModal";
+import { EditDataAgentModal, EditEnvironmentModal } from "@/components/admin/data-agents";
 import RelationshipDiagram from "@/components/admin/data-agents/RelationshipDiagram";
 import { useNotifications } from "@/components/ui/NotificationContext";
 import { NotificationProvider } from "@/components/ui/NotificationContext";
@@ -58,6 +59,7 @@ function DataAgentDetailPageContent() {
   const [newEnvironment, setNewEnvironment] = useState<NewEnvironment>({
     name: '',
     description: '',
+    customPrompt: '',
     environmentType: 'production',
     connectionConfig: {
       host: '',
@@ -112,6 +114,13 @@ function DataAgentDetailPageContent() {
   const [showEditRelationshipModal, setShowEditRelationshipModal] = useState(false);
   const [selectedRelationshipForEdit, setSelectedRelationshipForEdit] = useState<Relationship | null>(null);
   const [savingRelationship, setSavingRelationship] = useState(false);
+
+  // Data agent editing modal states
+  const [showEditDataAgentModal, setShowEditDataAgentModal] = useState(false);
+
+  // Environment editing modal states
+  const [showEditEnvironmentModal, setShowEditEnvironmentModal] = useState(false);
+  const [selectedEnvironmentForEdit, setSelectedEnvironmentForEdit] = useState<Environment | null>(null);
 
   // Notification hook
   const { addNotification } = useNotifications();
@@ -183,6 +192,7 @@ function DataAgentDetailPageContent() {
         setNewEnvironment({
           name: '',
           description: '',
+          customPrompt: '',
           environmentType: 'production',
           connectionConfig: {
             host: '',
@@ -324,6 +334,45 @@ function DataAgentDetailPageContent() {
       });
     } finally {
       setSavingCredentials(false);
+    }
+  };
+
+  const handleEditDataAgent = () => {
+    setShowEditDataAgentModal(true);
+  };
+
+  const handleUpdateDataAgent = (updatedAgent: DataAgent) => {
+    setDataAgent(updatedAgent);
+    addNotification({
+      type: 'success',
+      title: 'Data Agent Updated',
+      message: 'Data agent has been updated successfully.'
+    });
+  };
+
+  const handleEditEnvironment = () => {
+    const currentEnv = getCurrentEnvironment();
+    if (currentEnv) {
+      setSelectedEnvironmentForEdit(currentEnv);
+      setShowEditEnvironmentModal(true);
+    }
+  };
+
+  const handleUpdateEnvironment = (updatedEnvironment: Environment) => {
+    if (dataAgent) {
+      const updatedEnvironments = dataAgent.environments.map(env => 
+        env.id === updatedEnvironment.id ? updatedEnvironment : env
+      );
+      setDataAgent({
+        ...dataAgent,
+        environments: updatedEnvironments
+      });
+      setSelectedEnvironmentForEdit(null);
+      addNotification({
+        type: 'success',
+        title: 'Environment Updated',
+        message: 'Environment has been updated successfully.'
+      });
     }
   };
 
@@ -609,26 +658,47 @@ function DataAgentDetailPageContent() {
   };
 
   const handleAnalyzeTable = async (tableId: string) => {
+    console.log('🚀 FRONTEND: Starting table analysis for tableId:', tableId, 'environmentId:', activeEnvironmentId);
     if (!activeEnvironmentId) return;
     
     setAnalyzingTableId(tableId);
     try {
-      const response = await fetch(`/api/admin/data-agents/tables/${tableId}/analyze`, {
+      const apiUrl = `/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/tables/${tableId}/analyze`;
+      console.log('🚀 FRONTEND: Calling API URL:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
         method: 'POST'
       });
       
       if (response.ok) {
-        await fetchDataAgent();
+        const result = await response.json();
+        
+        // Update the table data directly in state instead of refetching everything
+        if (result.updatedTable && dataAgent) {
+          setDataAgent(prev => prev ? {
+            ...prev,
+            environments: prev.environments.map(env => 
+              env.id === activeEnvironmentId ? {
+                ...env,
+                tables: env.tables?.map(table => 
+                  table.id === tableId ? result.updatedTable : table
+                ) || []
+              } : env
+            )
+          } : null);
+        }
+        
         addNotification({
           type: 'success',
-          title: 'Analysis Started',
-          message: 'Table analysis has been initiated successfully.'
+          title: 'Analysis Complete',
+          message: 'Table analysis completed successfully!'
         });
       } else {
+        const errorData = await response.json();
         addNotification({
           type: 'error',
           title: 'Analysis Failed',
-          message: 'Failed to start table analysis. Please try again.'
+          message: errorData.error || 'Failed to analyze table. Please try again.'
         });
       }
     } catch (error) {
@@ -636,7 +706,7 @@ function DataAgentDetailPageContent() {
       addNotification({
         type: 'error',
         title: 'Analysis Error',
-        message: 'An error occurred while starting table analysis.'
+        message: 'An error occurred while analyzing the table.'
       });
     } finally {
       setAnalyzingTableId(null);
@@ -837,6 +907,7 @@ function DataAgentDetailPageContent() {
           dataAgent={dataAgent}
           onCreateEnvironment={() => setShowCreateEnvironmentModal(true)}
           onDeleteAgent={handleDeleteDataAgent}
+          onEditAgent={handleEditDataAgent}
           deletingAgent={deletingAgent}
         />
 
@@ -857,6 +928,7 @@ function DataAgentDetailPageContent() {
               onImportTables={handleFetchAvailableTables}
               onDeleteEnvironment={handleDeleteEnvironment}
               onEditCredentials={() => handleEditCredentials(currentEnvironment.id)}
+              onEditEnvironment={handleEditEnvironment}
               testingConnection={testingConnection}
               loadingTables={loadingTables}
               deletingEnvironment={deletingEnvironment}
@@ -979,6 +1051,27 @@ function DataAgentDetailPageContent() {
           onSave={handleSaveRelationship}
           saving={savingRelationship}
         />
+
+        {dataAgent && (
+          <EditDataAgentModal
+            isOpen={showEditDataAgentModal}
+            dataAgent={dataAgent}
+            onClose={() => setShowEditDataAgentModal(false)}
+            onUpdate={handleUpdateDataAgent}
+          />
+        )}
+
+        {selectedEnvironmentForEdit && (
+          <EditEnvironmentModal
+            isOpen={showEditEnvironmentModal}
+            environment={selectedEnvironmentForEdit}
+            onClose={() => {
+              setShowEditEnvironmentModal(false);
+              setSelectedEnvironmentForEdit(null);
+            }}
+            onUpdate={handleUpdateEnvironment}
+          />
+        )}
       </div>
     </AdminLayout>
   );

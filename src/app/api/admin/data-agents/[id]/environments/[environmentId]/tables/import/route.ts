@@ -155,14 +155,24 @@ async function importPostgreSQLTables(
   // Ensure password is a string
   const passwordStr = typeof password === 'string' ? password : String(password);
   
+  // Handle SSL configuration based on sslMode
+  let sslConfig: any = false;
+  if (connectionConfig.sslMode && connectionConfig.sslMode !== 'disable') {
+    sslConfig = { mode: connectionConfig.sslMode };
+    // For require mode, just enable SSL
+    if (connectionConfig.sslMode === 'require') {
+      sslConfig = true;
+    }
+  }
+  
   const config = {
     host: connectionConfig.host,
     port: parseInt(connectionConfig.port) || 5432,
     database: connectionConfig.database,
     user: user,
     password: passwordStr,
-    connectionTimeoutMillis: 10000,
-    ssl: connectionConfig.ssl === 'true' ? { rejectUnauthorized: false } : false
+    connectionTimeoutMillis: (connectionConfig.connectionTimeout || 30) * 1000,
+    ssl: sslConfig
   };
 
   const client = new Client(config);
@@ -373,14 +383,27 @@ async function importMySQLTables(
   try {
     const mysql = await import('mysql2/promise');
     
+    // Handle SSL configuration based on sslMode
+    let sslConfig: any = false;
+    if (connectionConfig.sslMode && connectionConfig.sslMode !== 'disable') {
+      if (connectionConfig.sslMode === 'require') {
+        sslConfig = true;
+      } else {
+        sslConfig = {
+          mode: connectionConfig.sslMode,
+          rejectUnauthorized: connectionConfig.sslMode === 'verify-full'
+        };
+      }
+    }
+    
     const connection = await mysql.createConnection({
       host: connectionConfig.host,
       port: parseInt(connectionConfig.port) || 3306,
       database: connectionConfig.database,
       user: credentials.username,
       password: credentials.password,
-      connectTimeout: 10000,
-      ssl: connectionConfig.ssl === 'true' ? { rejectUnauthorized: false } : undefined
+      connectTimeout: (connectionConfig.connectionTimeout || 30) * 1000,
+      ssl: sslConfig
     });
 
     const importResults = [];
@@ -553,11 +576,14 @@ async function importSQLServerTables(
       user: credentials.username,
       password: credentials.password,
       options: {
-        encrypt: connectionConfig.ssl === 'true',
-        trustServerCertificate: true,
-        connectTimeout: 10000,
-        requestTimeout: 10000
-      }
+        encrypt: connectionConfig.encrypt !== false,
+        trustServerCertificate: connectionConfig.trustServerCertificate || false,
+        enableArithAbort: true,
+        instanceName: connectionConfig.instance || undefined,
+        ...(connectionConfig.applicationName && { appName: connectionConfig.applicationName }),
+      },
+      connectionTimeout: (connectionConfig.connectionTimeout || 30) * 1000,
+      requestTimeout: (connectionConfig.connectionTimeout || 30) * 1000
     };
 
     const pool = new sql.ConnectionPool(config);
@@ -974,22 +1000,55 @@ async function importBigQueryTables(
   try {
     const { BigQuery } = await import('@google-cloud/bigquery');
     
-    // BigQuery credentials could be JSON or service account key
-    let bigquery;
-    if (credentials.serviceAccountKey) {
+    console.log('=== BigQuery Import Debug ===');
+    console.log('ConnectionConfig:', JSON.stringify(connectionConfig, null, 2));
+    console.log('Credentials keys:', Object.keys(credentials || {}));
+    
+    // For BigQuery, the credentials should include serviceAccountJson
+    let bigqueryConfig: any = {
+      projectId: connectionConfig.projectId || credentials?.projectId,
+    };
+
+    // Handle service account JSON - it could be in config or credentials
+    const serviceAccountJson = connectionConfig.serviceAccountJson || credentials?.serviceAccountJson;
+    
+    if (serviceAccountJson) {
+      try {
+        // Parse the service account JSON if it's a string
+        const parsedCredentials = typeof serviceAccountJson === 'string' 
+          ? JSON.parse(serviceAccountJson) 
+          : serviceAccountJson;
+        
+        bigqueryConfig.credentials = parsedCredentials;
+        console.log('BigQuery config set with credentials for import');
+      } catch (parseError) {
+        console.error('JSON parsing error in import:', parseError);
+        return [];
+      }
+    } else if (credentials?.serviceAccountKey) {
+      // Legacy support for serviceAccountKey
       const serviceAccount = JSON.parse(credentials.serviceAccountKey);
-      bigquery = new BigQuery({
-        projectId: connectionConfig.projectId,
-        keyFilename: undefined,
-        credentials: serviceAccount,
-      });
+      bigqueryConfig.credentials = serviceAccount;
+      console.log('BigQuery config set with legacy serviceAccountKey for import');
+    } else if (credentials?.keyFile) {
+      bigqueryConfig.keyFilename = credentials.keyFile;
+      console.log('BigQuery config set with keyFilename for import');
     } else {
-      bigquery = new BigQuery({
-        projectId: connectionConfig.projectId,
-      });
+      console.error('No BigQuery credentials found for import');
+      return [];
     }
 
-    const datasetId = connectionConfig.dataset || connectionConfig.datasetId;
+    const bigquery = new BigQuery(bigqueryConfig);
+
+    // Check for dataset ID in multiple possible fields
+    const datasetId = connectionConfig.dataset || connectionConfig.datasetId || connectionConfig.database;
+    console.log('Looking for dataset ID for import:', {
+      dataset: connectionConfig.dataset,
+      datasetId: connectionConfig.datasetId,
+      database: connectionConfig.database,
+      finalDatasetId: datasetId
+    });
+    
     if (!datasetId) {
       console.warn('No dataset specified for BigQuery table import');
       return [];
