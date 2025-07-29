@@ -7,6 +7,7 @@ interface EditEnvironmentModalProps {
   isOpen: boolean
   onClose: () => void
   environment: Environment
+  dataAgentId: string
   onUpdate: (updatedEnvironment: Environment) => void
 }
 
@@ -14,6 +15,7 @@ export function EditEnvironmentModal({
   isOpen,
   onClose,
   environment,
+  dataAgentId,
   onUpdate
 }: EditEnvironmentModalProps) {
   const [formData, setFormData] = useState({
@@ -28,7 +30,7 @@ export function EditEnvironmentModal({
     setIsLoading(true)
 
     try {
-      const response = await fetch(`/api/admin/environments/${environment.id}`, {
+      const response = await fetch(`/api/admin/data-agents/${dataAgentId}/environments/${environment.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'

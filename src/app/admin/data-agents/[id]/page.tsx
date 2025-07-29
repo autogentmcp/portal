@@ -158,7 +158,7 @@ function DataAgentDetailPageContent() {
   };
 
   const getCurrentEnvironment = (): Environment | null => {
-    if (!dataAgent || !activeEnvironmentId) return null;
+    if (!dataAgent || !activeEnvironmentId || !dataAgent.environments) return null;
     return dataAgent.environments.find(env => env.id === activeEnvironmentId) || null;
   };
 
@@ -359,7 +359,7 @@ function DataAgentDetailPageContent() {
   };
 
   const handleUpdateEnvironment = (updatedEnvironment: Environment) => {
-    if (dataAgent) {
+    if (dataAgent && dataAgent.environments) {
       const updatedEnvironments = dataAgent.environments.map(env => 
         env.id === updatedEnvironment.id ? updatedEnvironment : env
       );
@@ -1065,6 +1065,7 @@ function DataAgentDetailPageContent() {
           <EditEnvironmentModal
             isOpen={showEditEnvironmentModal}
             environment={selectedEnvironmentForEdit}
+            dataAgentId={dataAgent.id}
             onClose={() => {
               setShowEditEnvironmentModal(false);
               setSelectedEnvironmentForEdit(null);

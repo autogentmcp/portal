@@ -79,19 +79,45 @@ export async function POST(
       const llmService = getLLMService();
       
       console.log('🔌 Attempting to connect to database and fetch sample data...');
-      console.log('🔧 Environment connection details:', {
-        type: environment.databaseType,
-        host: environment.host,
-        port: environment.port,
-        database: environment.database,
-        username: environment.username ? '***' : 'none'
+      
+      // connectionConfig should already be parsed JSON object from Prisma
+      const connectionConfig = environment.connectionConfig || {};
+      
+      // Get credentials from vault
+      let credentials = null;
+      if (environment.vaultKey) {
+        try {
+          const { SecretManager } = await import('@/lib/secrets');
+          const secretManager = SecretManager.getInstance();
+          await secretManager.init();
+          
+          if (secretManager.hasProvider()) {
+            credentials = await secretManager.getCredentials(environment.vaultKey);
+            console.log('✅ Retrieved credentials from vault');
+            
+            // Ensure password is a string
+            if (credentials && credentials.password && typeof credentials.password !== 'string') {
+              credentials.password = String(credentials.password);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error retrieving credentials from vault:', error);
+        }
+      }
+      
+      console.log('🔧 Connection details:', {
+        type: dataAgent.connectionType,
+        host: connectionConfig.host,
+        port: connectionConfig.port,
+        database: connectionConfig.database,
+        hasCredentials: !!(credentials?.username && credentials?.password)
       });
       
       // Get sample data from the database
       const sampleData = await DatabaseConnectionManager.querySampleData(
-        environment.databaseType,
-        environment.config,
-        environment.credentials,
+        dataAgent.connectionType,
+        connectionConfig,
+        credentials || { username: '', password: '' },
         table.tableName,
         undefined, // schema name - can add support later
         10 // limit to 10 rows

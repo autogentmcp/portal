@@ -37,7 +37,24 @@ export interface TableAnalysisRequest {
     dataType: string;
     isNullable: boolean;
     isPrimaryKey: boolean;
+    isForeignKey?: boolean;
+    referencedTable?: string;
+    referencedColumn?: string;
+    isUnique?: boolean;
+    isIndexed?: boolean;
+    constraints?: string[];
     sampleValues?: string[];
+  }>;
+  primaryKeys?: string[];
+  foreignKeys?: Array<{
+    columnName: string;
+    referencedTable: string;
+    referencedColumn: string;
+  }>;
+  indexes?: Array<{
+    name: string;
+    columns: string[];
+    isUnique: boolean;
   }>;
   rowCount?: number;
   note?: string;
@@ -141,7 +158,7 @@ class LLMService {
             content: prompt,
           },
         ],
-        max_tokens: 2000,
+        max_tokens: 10000,
         temperature: 0.3,
       });
 
@@ -253,7 +270,38 @@ class LLMService {
 
   async generateTableRelationships(tables: Array<{
     name: string;
-    fields: Array<{ name: string; dataType: string; isPrimaryKey: boolean; }>;
+    fields: Array<{ 
+      name: string; 
+      dataType: string; 
+      isPrimaryKey: boolean;
+      isForeignKey?: boolean;
+      referencedTable?: string;
+      referencedColumn?: string;
+      isUnique?: boolean;
+      isIndexed?: boolean;
+    }>;
+    rawColumns?: Array<{
+      name: string;
+      dataType: string;
+      isNullable: boolean;
+      defaultValue?: string;
+      maxLength?: number;
+      precision?: number;
+      scale?: number;
+      collation?: string;
+      comment?: string;
+    }>;
+    primaryKeys?: string[];
+    foreignKeys?: Array<{
+      columnName: string;
+      referencedTable: string;
+      referencedColumn: string;
+    }>;
+    indexes?: Array<{
+      name: string;
+      columns: string[];
+      isUnique: boolean;
+    }>;
   }>): Promise<LLMResponse> {
     const prompt = this.buildRelationshipAnalysisPrompt(tables);
     
@@ -270,7 +318,7 @@ class LLMService {
             content: prompt,
           },
         ],
-        max_tokens: 1500,
+        max_tokens: 10000,
         temperature: 0.2,
       });
 
@@ -289,19 +337,40 @@ class LLMService {
 
   async generateStructuredRelationships(tables: Array<{
     name: string;
-    fields: Array<{ name: string; dataType: string; isPrimaryKey: boolean; }>;
+    fields: Array<{ 
+      name: string; 
+      dataType: string; 
+      isPrimaryKey: boolean;
+      isForeignKey?: boolean;
+      referencedTable?: string;
+      referencedColumn?: string;
+      isUnique?: boolean;
+      isIndexed?: boolean;
+    }>;
+    rawColumns?: Array<{
+      name: string;
+      dataType: string;
+      isNullable: boolean;
+      defaultValue?: string;
+      maxLength?: number;
+      precision?: number;
+      scale?: number;
+      collation?: string;
+      comment?: string;
+    }>;
+    primaryKeys?: string[];
+    foreignKeys?: Array<{
+      columnName: string;
+      referencedTable: string;
+      referencedColumn: string;
+    }>;
+    indexes?: Array<{
+      name: string;
+      columns: string[];
+      isUnique: boolean;
+    }>;
   }>): Promise<StructuredRelationshipResponse> {
     const prompt = this.buildStructuredRelationshipPrompt(tables);
-    
-    // Rough token estimation (4 chars per token average)
-    const estimatedInputTokens = Math.ceil(prompt.length / 4);
-    let maxTokens = 4000;
-    
-    // Adjust max tokens based on input size to leave room for response
-    if (estimatedInputTokens > 2000) {
-      maxTokens = Math.max(2000, 6000 - estimatedInputTokens);
-      console.log(`Large input detected. Estimated input tokens: ${estimatedInputTokens}, adjusted max_tokens to: ${maxTokens}`);
-    }
     
     try {
       const response = await this.client.chat.completions.create({
@@ -316,16 +385,11 @@ class LLMService {
             content: prompt,
           },
         ],
-        max_tokens: maxTokens,
+        max_tokens: 10000,
         temperature: 0.1,
       });
 
       const content = response.choices[0]?.message?.content || '';
-      
-      // Check if response was potentially truncated due to token limits
-      if (response.usage && response.usage.completion_tokens >= 3900) {
-        console.warn('Response may be truncated due to token limit. Completion tokens:', response.usage.completion_tokens);
-      }
       
       // Try to parse structured data from the response
       const { analysis, relationships } = this.parseStructuredRelationshipResponse(content);
@@ -356,11 +420,40 @@ class LLMService {
       prompt += `\n${request.note}\n`;
     }
     
+    // Add primary keys information
+    if (request.primaryKeys && request.primaryKeys.length > 0) {
+      prompt += `\nPrimary Keys: ${request.primaryKeys.join(', ')}\n`;
+    }
+    
+    // Add foreign keys information
+    if (request.foreignKeys && request.foreignKeys.length > 0) {
+      prompt += `\nForeign Keys:\n`;
+      request.foreignKeys.forEach(fk => {
+        prompt += `- ${fk.columnName} -> ${fk.referencedTable}.${fk.referencedColumn}\n`;
+      });
+    }
+    
+    // Add indexes information
+    if (request.indexes && request.indexes.length > 0) {
+      prompt += `\nIndexes:\n`;
+      request.indexes.forEach(idx => {
+        prompt += `- ${idx.name} (${idx.columns.join(', ')})`;
+        if (idx.isUnique) prompt += ` [UNIQUE]`;
+        prompt += `\n`;
+      });
+    }
+    
     prompt += `\nFields:\n`;
     request.fields.forEach(field => {
       prompt += `- ${field.name} (${field.dataType})`;
       if (field.isPrimaryKey) prompt += ` [PRIMARY KEY]`;
+      if (field.isForeignKey) prompt += ` [FOREIGN KEY -> ${field.referencedTable}.${field.referencedColumn}]`;
+      if (field.isUnique) prompt += ` [UNIQUE]`;
+      if (field.isIndexed) prompt += ` [INDEXED]`;
       if (!field.isNullable) prompt += ` [NOT NULL]`;
+      if (field.constraints && field.constraints.length > 0) {
+        prompt += ` [CONSTRAINTS: ${field.constraints.join(', ')}]`;
+      }
       if (field.sampleValues && field.sampleValues.length > 0) {
         prompt += ` - Sample values: ${field.sampleValues.slice(0, 5).join(', ')}`;
       }
@@ -370,9 +463,10 @@ class LLMService {
     prompt += `\nProvide a comprehensive analysis including:
 1. **Business Purpose**: What this table likely represents in the business domain
 2. **Data Patterns**: Observations about the data types and field relationships
-3. **Data Quality**: Potential data quality concerns or recommendations
-4. **Usage Recommendations**: How this table might be used in queries or reports
-5. **Potential Relationships**: Fields that might relate to other tables
+3. **Key Relationships**: Analysis of primary keys, foreign keys, and indexes
+4. **Data Quality**: Potential data quality concerns or recommendations
+5. **Usage Recommendations**: How this table might be used in queries or reports
+6. **Potential Relationships**: Fields that might relate to other tables
 
 Keep the analysis concise but informative.`;
 
@@ -409,33 +503,118 @@ Be concise and specific.`;
 
   private buildRelationshipAnalysisPrompt(tables: Array<{
     name: string;
-    fields: Array<{ name: string; dataType: string; isPrimaryKey: boolean; }>;
+    fields: Array<{ 
+      name: string; 
+      dataType: string; 
+      isPrimaryKey: boolean;
+      isForeignKey?: boolean;
+      referencedTable?: string;
+      referencedColumn?: string;
+      isUnique?: boolean;
+      isIndexed?: boolean;
+    }>;
+    rawColumns?: Array<{
+      name: string;
+      dataType: string;
+      isNullable: boolean;
+      defaultValue?: string;
+      maxLength?: number;
+      precision?: number;
+      scale?: number;
+      collation?: string;
+      comment?: string;
+    }>;
+    primaryKeys?: string[];
+    foreignKeys?: Array<{
+      columnName: string;
+      referencedTable: string;
+      referencedColumn: string;
+    }>;
+    indexes?: Array<{
+      name: string;
+      columns: string[];
+      isUnique: boolean;
+    }>;
   }>): string {
     let prompt = `Analyze the following database tables to identify potential relationships:\n\n`;
     
     tables.forEach(table => {
       prompt += `Table: ${table.name}\n`;
+      
+      // Add primary keys
+      if (table.primaryKeys && table.primaryKeys.length > 0) {
+        prompt += `  Primary Keys: ${table.primaryKeys.join(', ')}\n`;
+      }
+      
+      // Add foreign keys
+      if (table.foreignKeys && table.foreignKeys.length > 0) {
+        prompt += `  Foreign Keys:\n`;
+        table.foreignKeys.forEach(fk => {
+          prompt += `    - ${fk.columnName} -> ${fk.referencedTable}.${fk.referencedColumn}\n`;
+        });
+      }
+      
+      // Add indexes
+      if (table.indexes && table.indexes.length > 0) {
+        prompt += `  Indexes:\n`;
+        table.indexes.forEach(idx => {
+          prompt += `    - ${idx.name} (${idx.columns.join(', ')})`;
+          if (idx.isUnique) prompt += ` [UNIQUE]`;
+          prompt += `\n`;
+        });
+      }
+      
+      prompt += `  Fields:\n`;
       table.fields.forEach(field => {
-        prompt += `  - ${field.name} (${field.dataType})`;
+        prompt += `    - ${field.name} (${field.dataType})`;
         if (field.isPrimaryKey) prompt += ` [PK]`;
+        if (field.isForeignKey) prompt += ` [FK -> ${field.referencedTable}.${field.referencedColumn}]`;
+        if (field.isUnique) prompt += ` [UNIQUE]`;
+        if (field.isIndexed) prompt += ` [INDEXED]`;
         prompt += `\n`;
       });
+      
+      // Add raw columns for databases without formal relationships (like BigQuery)
+      if (table.rawColumns && table.rawColumns.length > 0) {
+        prompt += `  Raw Column Details:\n`;
+        table.rawColumns.forEach(col => {
+          prompt += `    - ${col.name} (${col.dataType})`;
+          if (!col.isNullable) prompt += ` [NOT NULL]`;
+          if (col.defaultValue) prompt += ` [DEFAULT: ${col.defaultValue}]`;
+          if (col.maxLength) prompt += ` [MAX_LENGTH: ${col.maxLength}]`;
+          if (col.precision) prompt += ` [PRECISION: ${col.precision}]`;
+          if (col.scale) prompt += ` [SCALE: ${col.scale}]`;
+          if (col.comment) prompt += ` [COMMENT: ${col.comment}]`;
+          prompt += `\n`;
+        });
+      }
+      
       prompt += `\n`;
     });
 
-    prompt += `Based on field names, data types, and common database patterns, identify likely relationships:
+    prompt += `Based on field names, data types, existing keys, indexes, column comments, and common database patterns, identify likely relationships:
 
-1. **Primary Key - Foreign Key Relationships**: Match fields that likely reference each other
-2. **Junction Tables**: Identify tables that might serve as many-to-many relationship bridges
-3. **Hierarchical Relationships**: Self-referencing relationships within tables
-4. **Lookup Tables**: Tables that appear to be reference/lookup data
+1. **Existing Foreign Key Relationships**: Document the already defined foreign key relationships
+2. **Missing Foreign Key Relationships**: Identify fields that should be foreign keys but aren't defined
+3. **Column Name Pattern Relationships**: Look for columns ending in '_id', '_key', or matching table names
+4. **Data Type Matching**: Find columns with matching data types that could be related
+5. **Junction Tables**: Identify tables that might serve as many-to-many relationship bridges
+6. **Hierarchical Relationships**: Self-referencing relationships within tables
+7. **Lookup Tables**: Tables that appear to be reference/lookup data
+8. **Index-based Relationships**: Relationships suggested by index patterns
+9. **Comment-based Relationships**: Relationships suggested by column comments
+
+For databases like BigQuery without formal foreign keys, pay special attention to:
+- Column naming conventions (e.g., user_id, customer_key, order_number)
+- Data type compatibility between potential related columns
+- Business logic patterns in column names and comments
 
 For each relationship, provide:
 - Source table and field
 - Target table and field  
 - Relationship type (one-to-one, one-to-many, many-to-many)
 - Confidence level (high/medium/low)
-- Reasoning for the relationship
+- Reasoning for the relationship (field names, data types, existing keys, indexes, comments)
 
 Format as a clear list with explanations.`;
 
@@ -444,22 +623,92 @@ Format as a clear list with explanations.`;
 
   private buildStructuredRelationshipPrompt(tables: Array<{
     name: string;
-    fields: Array<{ name: string; dataType: string; isPrimaryKey: boolean; }>;
+    fields: Array<{ 
+      name: string; 
+      dataType: string; 
+      isPrimaryKey: boolean;
+      isForeignKey?: boolean;
+      referencedTable?: string;
+      referencedColumn?: string;
+      isUnique?: boolean;
+      isIndexed?: boolean;
+    }>;
+    rawColumns?: Array<{
+      name: string;
+      dataType: string;
+      isNullable: boolean;
+      defaultValue?: string;
+      maxLength?: number;
+      precision?: number;
+      scale?: number;
+      collation?: string;
+      comment?: string;
+    }>;
+    primaryKeys?: string[];
+    foreignKeys?: Array<{
+      columnName: string;
+      referencedTable: string;
+      referencedColumn: string;
+    }>;
+    indexes?: Array<{
+      name: string;
+      columns: string[];
+      isUnique: boolean;
+    }>;
   }>): string {
     let prompt = `Analyze the following database tables to identify relationships. Return both analysis and structured JSON data.\n\n`;
     
-    // If too many tables, warn about focusing on most likely relationships
-    if (tables.length > 10) {
-      prompt += `NOTE: Large schema detected (${tables.length} tables). Focus on the most obvious and high-confidence relationships to stay within token limits.\n\n`;
-    }
-    
     tables.forEach(table => {
       prompt += `Table: ${table.name}\n`;
+      
+      // Add primary keys
+      if (table.primaryKeys && table.primaryKeys.length > 0) {
+        prompt += `  Primary Keys: ${table.primaryKeys.join(', ')}\n`;
+      }
+      
+      // Add foreign keys
+      if (table.foreignKeys && table.foreignKeys.length > 0) {
+        prompt += `  Foreign Keys:\n`;
+        table.foreignKeys.forEach(fk => {
+          prompt += `    - ${fk.columnName} -> ${fk.referencedTable}.${fk.referencedColumn}\n`;
+        });
+      }
+      
+      // Add indexes
+      if (table.indexes && table.indexes.length > 0) {
+        prompt += `  Indexes:\n`;
+        table.indexes.forEach(idx => {
+          prompt += `    - ${idx.name} (${idx.columns.join(', ')})`;
+          if (idx.isUnique) prompt += ` [UNIQUE]`;
+          prompt += `\n`;
+        });
+      }
+      
+      prompt += `  Fields:\n`;
       table.fields.forEach(field => {
-        prompt += `  - ${field.name} (${field.dataType})`;
+        prompt += `    - ${field.name} (${field.dataType})`;
         if (field.isPrimaryKey) prompt += ` [PK]`;
+        if (field.isForeignKey) prompt += ` [FK -> ${field.referencedTable}.${field.referencedColumn}]`;
+        if (field.isUnique) prompt += ` [UNIQUE]`;
+        if (field.isIndexed) prompt += ` [INDEXED]`;
         prompt += `\n`;
       });
+      
+      // Add raw columns for databases without formal relationships (like BigQuery)
+      if (table.rawColumns && table.rawColumns.length > 0) {
+        prompt += `  Raw Column Details:\n`;
+        table.rawColumns.forEach(col => {
+          prompt += `    - ${col.name} (${col.dataType})`;
+          if (!col.isNullable) prompt += ` [NOT NULL]`;
+          if (col.defaultValue) prompt += ` [DEFAULT: ${col.defaultValue}]`;
+          if (col.maxLength) prompt += ` [MAX_LENGTH: ${col.maxLength}]`;
+          if (col.precision) prompt += ` [PRECISION: ${col.precision}]`;
+          if (col.scale) prompt += ` [SCALE: ${col.scale}]`;
+          if (col.comment) prompt += ` [COMMENT: ${col.comment}]`;
+          prompt += `\n`;
+        });
+      }
+      
       prompt += `\n`;
     });
 
@@ -484,19 +733,23 @@ Format as a clear list with explanations.`;
 \`\`\`
 
 IMPORTANT: 
+- Include both existing foreign key relationships AND potential missing relationships
+- For databases like BigQuery without formal foreign keys, focus on column naming patterns and data type matching
+- Look for columns ending in '_id', '_key', or matching table names (e.g., 'customer_id' -> 'customers.id')
+- Consider data type compatibility between potential related columns
+- Pay attention to column comments that might indicate relationships
 - Only include relationships with confidence >= 0.7
 - Use relationship types: "one_to_one", "one_to_many", "many_to_many"
 - Always close the JSON array with ] and the code block with \`\`\`
 - If no relationships found, return an empty array []
-- Keep your response under 4000 tokens - prioritize the highest confidence relationships
-- Be concise in descriptions and examples
+- Consider all available information: field names, data types, existing keys, indexes, constraints, raw column details, and comments
 
 Format your response as:
 **ANALYSIS:**
-[Your detailed text analysis here - keep concise]
+[Your detailed text analysis here]
 
 **STRUCTURED_DATA:**
-[Complete JSON array here - prioritize high-confidence relationships]`;
+[Complete JSON array here]`;
 
     return prompt;
   }

@@ -63,13 +63,46 @@ export async function POST(
       }
     }
 
+    // Validate connection configuration and schema
+    const connectionConfig = environment.connectionConfig || {};
+    console.log(`Starting table import for ${dataAgent.connectionType} with ${tableNames.length} tables`);
+    
+    // Log schema/database configuration for debugging
+    switch (dataAgent.connectionType) {
+      case 'postgresql':
+        console.log(`PostgreSQL schema: ${connectionConfig.schema || 'public'}`);
+        break;
+      case 'mysql':
+        console.log(`MySQL database: ${connectionConfig.database}`);
+        break;
+      case 'mssql':
+      case 'sqlserver':
+        console.log(`SQL Server schema: ${connectionConfig.schema || 'dbo'}`);
+        break;
+      case 'db2':
+        console.log(`DB2 schema: ${connectionConfig.schema || connectionConfig.database}`);
+        break;
+      case 'bigquery':
+        const datasetId = connectionConfig.dataset || connectionConfig.datasetId || connectionConfig.database;
+        console.log(`BigQuery dataset: ${datasetId}`);
+        if (!datasetId) {
+          return NextResponse.json({ error: 'BigQuery dataset is required' }, { status: 400 });
+        }
+        break;
+      case 'databricks':
+        console.log(`Databricks catalog.schema: ${connectionConfig.catalog || 'hive_metastore'}.${connectionConfig.schema || 'default'}`);
+        break;
+      default:
+        console.log(`Connection type: ${dataAgent.connectionType}`);
+    }
+
     // Import tables based on connection type
     let importResults = [];
     if (dataAgent.connectionType === 'postgresql') {
       importResults = await importPostgreSQLTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -77,7 +110,7 @@ export async function POST(
       importResults = await importMySQLTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -85,7 +118,7 @@ export async function POST(
       importResults = await importSQLServerTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -93,7 +126,7 @@ export async function POST(
       importResults = await importDB2Tables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -101,7 +134,7 @@ export async function POST(
       importResults = await importBigQueryTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -109,7 +142,7 @@ export async function POST(
       importResults = await importDatabricksTables(
         dataAgent.id,
         environmentId,
-        environment.connectionConfig,
+        connectionConfig,
         credentials,
         tableNames
       );
@@ -309,10 +342,12 @@ async function importPostgreSQLTables(
 
         // Create or update column records
         for (const column of columns.rows) {
-          const existingColumn = await (prisma.dataAgentTableColumn as any).findFirst({
+          const existingColumn = await (prisma.dataAgentTableColumn as any).findUnique({
             where: {
-              tableId: createdTable.id,
-              columnName: column.column_name
+              tableId_columnName: {
+                tableId: createdTable.id,
+                columnName: column.column_name
+              }
             }
           });
 
@@ -591,12 +626,16 @@ async function importSQLServerTables(
 
     const importResults = [];
 
+    // Get the target schema for filtering
+    const targetSchema = connectionConfig.schema || 'dbo'; // Default to 'dbo' for SQL Server
+    console.log(`SQL Server import filtering by schema: ${targetSchema}`);
+
     try {
       for (const tableName of tableNames) {
         try {
           console.log(`Importing SQL Server table: ${tableName}`);
           
-          // Get table information
+          // Get table information with schema filtering
           const tableInfoResult = await pool.request().query(`
             SELECT 
               t.TABLE_NAME,
@@ -606,6 +645,7 @@ async function importSQLServerTables(
             LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME
             LEFT JOIN sys.extended_properties ep ON st.object_id = ep.major_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
             WHERE t.TABLE_NAME = '${tableName}' 
+              AND t.TABLE_SCHEMA = '${targetSchema}'
               AND t.TABLE_TYPE = 'BASE TABLE'
               AND t.TABLE_SCHEMA NOT IN ('sys', 'information_schema')
           `);
@@ -796,13 +836,17 @@ async function importDB2Tables(
           console.log('DB2 connection successful for import');
           const importResults = [];
           
+          // Get the target schema for filtering
+          const targetSchema = connectionConfig.schema || connectionConfig.database?.toUpperCase();
+          console.log(`DB2 import filtering by schema: ${targetSchema}`);
+          
           try {
             for (const tableName of tableNames) {
               try {
                 console.log(`Importing DB2 table: ${tableName}`);
                 
-                // Get table information
-                const tableInfoQuery = `
+                // Get table information with schema filtering
+                let tableInfoQuery = `
                   SELECT 
                     TABNAME,
                     TABSCHEMA,
@@ -813,6 +857,11 @@ async function importDB2Tables(
                     AND TABSCHEMA NOT IN ('SYSIBM', 'SYSCAT', 'SYSSTAT', 'SYSTOOLS', 'SYSPROC', 'SYSIBMADM', 'SYSFUN', 'SYSIBMINTERNAL', 'SYSIBMTS')
                     AND TYPE = 'T'
                 `;
+                
+                // Add schema filter if specified
+                if (targetSchema) {
+                  tableInfoQuery += ` AND TABSCHEMA = '${targetSchema}'`;
+                }
                 
                 const tableInfoResult = await new Promise((tableResolve) => {
                   conn.query(tableInfoQuery, (tableErr: any, tableRes: any) => {
