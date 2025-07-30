@@ -308,7 +308,7 @@ export async function PUT(
   }
 }
 
-// PATCH /api/admin/data-agents/[id]/environments/[environmentId] - Edit environment credentials (username/password only)
+// PATCH /api/admin/data-agents/[id]/environments/[environmentId] - Update environment basic details or credentials
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string; environmentId: string } }
@@ -320,86 +320,123 @@ export async function PATCH(
     }
 
     const { id, environmentId } = await params
-    const { username, password } = await request.json()
+    const body = await request.json()
+    
+    // Check if this is a credentials update (has username/password) or basic details update
+    if (body.username && body.password) {
+      // This is a credentials update - existing logic
+      const { username, password } = body
 
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: 'Username and password are required' },
-        { status: 400 }
-      )
-    }
-
-    // Get the environment
-    const environment = await prisma.environment.findFirst({
-      where: {
-        id: environmentId,
-        dataAgent: {
-          id: id
-        }
-      },
-      include: {
-        dataAgent: true
+      if (!username || !password) {
+        return NextResponse.json(
+          { error: 'Username and password are required' },
+          { status: 400 }
+        )
       }
-    })
 
-    if (!environment) {
-      return NextResponse.json({ error: 'Environment not found' }, { status: 404 })
-    }
-
-    // Update credentials in vault
-    if (environment.vaultKey) {
-      try {
-        const secretManager = new EnvSecretManager()
-        await secretManager.init()
-        
-        if (secretManager.hasProvider()) {
-          // Get existing credentials
-          const existingCredentials = await secretManager.getCredentials(environment.vaultKey) || {}
-          
-          // Update only username and password
-          const updatedCredentials = {
-            ...existingCredentials,
-            username,
-            password
+      // Get the environment
+      const environment = await prisma.environment.findFirst({
+        where: {
+          id: environmentId,
+          dataAgent: {
+            id: id
           }
+        },
+        include: {
+          dataAgent: true
+        }
+      })
+
+      if (!environment) {
+        return NextResponse.json({ error: 'Environment not found' }, { status: 404 })
+      }
+
+      // Update credentials in vault
+      if (environment.vaultKey) {
+        try {
+          const secretManager = new EnvSecretManager()
+          await secretManager.init()
           
-          // Store back to vault
-          const success = await secretManager.storeCredentials(environment.vaultKey, updatedCredentials)
-          
-          if (!success) {
+          if (secretManager.hasProvider()) {
+            // Get existing credentials
+            const existingCredentials = await secretManager.getCredentials(environment.vaultKey) || {}
+            
+            // Update only username and password
+            const updatedCredentials = {
+              ...existingCredentials,
+              username,
+              password
+            }
+            
+            // Store back to vault
+            const success = await secretManager.storeCredentials(environment.vaultKey, updatedCredentials)
+            
+            if (!success) {
+              return NextResponse.json(
+                { error: 'Failed to update credentials in vault' },
+                { status: 500 }
+              )
+            }
+          } else {
             return NextResponse.json(
-              { error: 'Failed to update credentials in vault' },
+              { error: 'No vault provider available' },
               { status: 500 }
             )
           }
-        } else {
+        } catch (error) {
+          console.error('Error updating credentials in vault:', error)
           return NextResponse.json(
-            { error: 'No vault provider available' },
+            { error: 'Failed to update credentials' },
             { status: 500 }
           )
         }
-      } catch (error) {
-        console.error('Error updating credentials in vault:', error)
+      } else {
         return NextResponse.json(
-          { error: 'Failed to update credentials' },
-          { status: 500 }
+          { error: 'Environment has no vault key' },
+          { status: 400 }
         )
       }
-    } else {
-      return NextResponse.json(
-        { error: 'Environment has no vault key' },
-        { status: 400 }
-      )
-    }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Environment credentials updated successfully' 
-    })
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Environment credentials updated successfully' 
+      })
+    } else {
+      // This is a basic details update - new logic
+      const { name, description, customPrompt } = body
+
+      // Get the environment to verify it belongs to the data agent
+      const environment = await prisma.environment.findFirst({
+        where: {
+          id: environmentId,
+          dataAgent: {
+            id: id
+          }
+        }
+      })
+
+      if (!environment) {
+        return NextResponse.json({ error: 'Environment not found' }, { status: 404 })
+      }
+
+      // Prepare update data - only include fields that were provided
+      const updateData: any = {}
+      if (name !== undefined) updateData.name = name
+      if (description !== undefined) updateData.description = description
+      if (customPrompt !== undefined) updateData.customPrompt = customPrompt
+
+      // Update the environment
+      const updatedEnvironment = await prisma.environment.update({
+        where: { id: environmentId },
+        data: updateData
+      })
+
+      return NextResponse.json(updatedEnvironment)
+    }
   } catch (error) {
-    console.error('Error updating environment credentials:', error)
+    console.error('Error updating environment:', error)
     return NextResponse.json(
-      { error: 'Failed to update environment credentials' },
+      { error: 'Failed to update environment' },
       { status: 500 }
     )
   }
