@@ -124,6 +124,12 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               >
                 Data Agents
               </a>
+              <a
+                href="/admin/settings"
+                className={getNavItemClass('/admin/settings')}
+              >
+                Settings
+              </a>
             </div>
           </nav>
         </div>

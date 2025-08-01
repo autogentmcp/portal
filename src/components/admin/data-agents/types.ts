@@ -44,6 +44,15 @@ export interface Table {
   description?: string;
   rowCount?: number;
   analysisStatus: 'PENDING' | 'ANALYZING' | 'COMPLETED' | 'FAILED';
+  analysisResult?: {
+    summary?: string;
+    businessPurpose?: string;
+    dataPatterns?: string;
+    columnsAnalyzed?: number;
+    columns?: any[];
+    suggestedImprovements?: string[];
+    analyzedAt?: string;
+  };
   columns?: Column[];
   createdAt: string;
   updatedAt: string;
@@ -57,6 +66,8 @@ export interface Column {
   isPrimaryKey: boolean;
   comment?: string;
   aiDescription?: string;
+  sampleValues?: string[];
+  isForeignKey?: boolean;
 }
 
 export interface Relationship {

@@ -4,6 +4,24 @@ import { getAuthUser } from '@/lib/auth';
 import { getLLMService } from '@/lib/llm';
 import { DatabaseConnectionManager } from '@/lib/database/connection-manager';
 
+interface SampleDataResult {
+  rowCount?: number;
+  schemaDetails?: {
+    [columnName: string]: {
+      dataType: string;
+      isNullable: boolean;
+      defaultValue?: string;
+      maxLength?: number;
+      precision?: number;
+      scale?: number;
+      isPrimaryKey: boolean;
+      comment?: string;
+      ordinalPosition?: number;
+    };
+  };
+  [columnName: string]: string[] | number | any;
+}
+
 // POST /api/admin/data-agents/tables/[id]/analyze - Analyze table with LLM
 export async function POST(
   request: NextRequest,
@@ -44,18 +62,35 @@ export async function POST(
       const sampleData = await getSampleData(table);
       const hasSampleData = sampleData && Object.keys(sampleData).length > 0;
       
-      // Prepare LLM request
-      const llmService = getLLMService();
+      // Prepare LLM request with enhanced schema details
+      const llmService = await getLLMService();
       const analysisRequest = {
         tableName: table.tableName,
-        fields: table.columns.map((field: any) => ({
-          name: field.columnName,
-          dataType: field.dataType,
-          isNullable: field.isNullable,
-          isPrimaryKey: field.isPrimaryKey,
-          sampleValues: Array.isArray(sampleData[field.columnName]) ? sampleData[field.columnName] as string[] : [],
-        })),
+        fields: table.columns.map((field: any) => {
+          const schemaInfo = sampleData.schemaDetails?.[field.columnName];
+          return {
+            name: field.columnName,
+            dataType: field.dataType,
+            isNullable: field.isNullable,
+            isPrimaryKey: field.isPrimaryKey,
+            isForeignKey: field.isForeignKey || false,
+            referencedTable: field.referencedTable,
+            referencedColumn: field.referencedColumn,
+            isUnique: field.isUnique || false,
+            isIndexed: field.isIndexed || false,
+            constraints: field.constraints || [],
+            sampleValues: Array.isArray(sampleData[field.columnName]) ? sampleData[field.columnName] as string[] : [],
+            // Enhanced schema details from database
+            maxLength: schemaInfo?.maxLength,
+            precision: schemaInfo?.precision,
+            scale: schemaInfo?.scale,
+            defaultValue: schemaInfo?.defaultValue,
+            comment: schemaInfo?.comment,
+            ordinalPosition: schemaInfo?.ordinalPosition
+          };
+        }),
         rowCount: sampleData.rowCount,
+        schemaDetails: sampleData.schemaDetails,
         note: hasSampleData ? undefined : "Note: Analysis performed without sample data due to database connection issues."
       };
 
@@ -162,11 +197,6 @@ export async function POST(
   }
 }
 
-interface SampleDataResult {
-  [fieldName: string]: string[] | number | undefined;
-  rowCount?: number;
-}
-
 // Helper function to get sample data from the table
 async function getSampleData(table: any): Promise<SampleDataResult> {
   const dataAgent = table.dataAgent;
@@ -267,15 +297,74 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
       quotedTableName = `"${tableName}"`;
     }
     
+    // Get column metadata for schema details
+    const schemaQuery = `
+      SELECT 
+        c.column_name,
+        c.data_type,
+        c.is_nullable,
+        c.column_default,
+        c.character_maximum_length,
+        c.numeric_precision,
+        c.numeric_scale,
+        c.ordinal_position,
+        CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+        col_description(pgc.oid, c.ordinal_position) as column_comment
+      FROM information_schema.columns c
+      LEFT JOIN (
+        SELECT ku.column_name
+        FROM information_schema.table_constraints tc
+        INNER JOIN information_schema.key_column_usage ku
+          ON tc.constraint_name = ku.constraint_name
+        WHERE tc.constraint_type = 'PRIMARY KEY'
+          AND tc.table_name = $2
+          AND tc.table_schema = $3
+      ) pk ON c.column_name = pk.column_name
+      LEFT JOIN pg_class pgc ON pgc.relname = c.table_name
+      LEFT JOIN pg_namespace pgn ON pgn.oid = pgc.relnamespace AND pgn.nspname = c.table_schema
+      WHERE c.table_name = $2 
+        AND c.table_schema = $3
+      ORDER BY c.ordinal_position
+    `;
+    
+    const currentSchema = schemaName || 'public';
+    const schemaResult = await client.query(schemaQuery, [quotedTableName, tableName, currentSchema]);
+    
     // Get row count
     const countResult = await client.query(`SELECT COUNT(*) as count FROM ${quotedTableName}`);
     const rowCount = parseInt(countResult.rows[0].count);
     
-    // Get sample data (limit to 100 rows)
-    const sampleResult = await client.query(`SELECT * FROM ${quotedTableName} LIMIT 100`);
+    // Get random sample data (limit to 100 rows)
+    // Use TABLESAMPLE for large tables (PostgreSQL 9.5+) or ORDER BY RANDOM() for smaller tables
+    let sampleQuery: string;
+    if (rowCount > 10000) {
+      // For large tables, use TABLESAMPLE BERNOULLI for better performance
+      sampleQuery = `SELECT * FROM ${quotedTableName} TABLESAMPLE BERNOULLI(1) LIMIT 100`;
+    } else {
+      // For smaller tables, use ORDER BY RANDOM() for true randomness
+      sampleQuery = `SELECT * FROM ${quotedTableName} ORDER BY RANDOM() LIMIT 100`;
+    }
+    
+    const sampleResult = await client.query(sampleQuery);
     
     // Organize sample values by column
     const sampleData: { [key: string]: string[] } = {};
+    const schemaDetails: { [key: string]: any } = {};
+    
+    // Add schema information
+    schemaResult.rows.forEach((col: any) => {
+      schemaDetails[col.column_name] = {
+        dataType: col.data_type,
+        isNullable: col.is_nullable === 'YES',
+        defaultValue: col.column_default,
+        maxLength: col.character_maximum_length,
+        precision: col.numeric_precision,
+        scale: col.numeric_scale,
+        isPrimaryKey: col.is_primary_key,
+        comment: col.column_comment,
+        ordinalPosition: col.ordinal_position
+      };
+    });
     
     if (sampleResult.rows.length > 0) {
       const columns = Object.keys(sampleResult.rows[0]);
@@ -298,8 +387,8 @@ async function getPostgresSampleData(config: any, credentials: any, tableName: s
           .slice(0, 20); // Limit to 20 sample values per column
       });
     }
-    
-    return { ...sampleData, rowCount };
+
+    return { ...sampleData, rowCount, schemaDetails };
   } catch (error) {
     const err = error as any;
     console.warn(`PostgreSQL connection failed for table ${tableName}:`, {
@@ -361,8 +450,9 @@ async function getMySQLSampleData(config: any, credentials: any, tableName: stri
     const [countRows] = await connection.execute(`SELECT COUNT(*) as count FROM ${quotedTableName}`);
     const rowCount = (countRows as any[])[0].count;
     
-    // Get sample data
-    const [sampleRows] = await connection.execute(`SELECT * FROM ${quotedTableName} LIMIT 100`);
+    // Get random sample data (limit to 100 rows)
+    // Use ORDER BY RAND() for random sampling in MySQL
+    const [sampleRows] = await connection.execute(`SELECT * FROM ${quotedTableName} ORDER BY RAND() LIMIT 100`);
     
     const sampleData: { [key: string]: string[] } = {};
     
@@ -426,8 +516,18 @@ async function getMSSQLSampleData(config: any, credentials: any, tableName: stri
     const countResult = await pool.request().query(`SELECT COUNT(*) as count FROM ${qualifiedTableName}`);
     const rowCount = countResult.recordset[0].count;
     
-    // Get sample data
-    const sampleResult = await pool.request().query(`SELECT TOP 100 * FROM ${qualifiedTableName}`);
+    // Get random sample data (limit to 100 rows)
+    // Use TABLESAMPLE for large tables or ORDER BY NEWID() for smaller tables in SQL Server
+    let sampleQuery: string;
+    if (rowCount > 10000) {
+      // For large tables, use TABLESAMPLE for better performance
+      sampleQuery = `SELECT TOP 100 * FROM ${qualifiedTableName} TABLESAMPLE (1 PERCENT)`;
+    } else {
+      // For smaller tables, use ORDER BY NEWID() for true randomness
+      sampleQuery = `SELECT TOP 100 * FROM ${qualifiedTableName} ORDER BY NEWID()`;
+    }
+    
+    const sampleResult = await pool.request().query(sampleQuery);
     
     const sampleData: { [key: string]: string[] } = {};
     
@@ -465,8 +565,12 @@ async function getBigQuerySampleData(config: any, credentials: any, tableName: s
     const { BigQuery } = require('@google-cloud/bigquery');
     
     // For BigQuery, the credentials should include serviceAccountJson
+    if (!config.projectId) {
+      throw new Error('BigQuery projectId is required in connection configuration');
+    }
+    
     let bigqueryConfig: any = {
-      projectId: config.projectId || credentials?.projectId,
+      projectId: config.projectId, // Always use projectId from connection config
     };
 
     // Handle service account JSON - it could be in config or credentials
@@ -511,8 +615,17 @@ async function getBigQuerySampleData(config: any, credentials: any, tableName: s
     const [countRows] = await bigquery.query({ query: countQuery });
     const rowCount = countRows[0]?.count || 0;
     
-    // Get sample data
-    const sampleQuery = `SELECT * FROM ${finalTableName} LIMIT 100`;
+    // Get random sample data using TABLESAMPLE in BigQuery
+    // BigQuery uses TABLESAMPLE SYSTEM for random sampling
+    let sampleQuery: string;
+    if (rowCount > 10000) {
+      // For large tables, use TABLESAMPLE for random sampling
+      sampleQuery = `SELECT * FROM ${finalTableName} TABLESAMPLE SYSTEM (1 PERCENT) LIMIT 100`;
+    } else {
+      // For smaller tables, use ORDER BY RAND() 
+      sampleQuery = `SELECT * FROM ${finalTableName} ORDER BY RAND() LIMIT 100`;
+    }
+    
     const [rows] = await bigquery.query({ query: sampleQuery });
     
     const sampleData: { [key: string]: string[] } = {};

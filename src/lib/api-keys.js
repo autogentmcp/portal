@@ -1,7 +1,10 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
-const { SecretManager } = require('../../script-utils');
+
+// Import SecretManager from proper relative path
+const path = require('path');
+const { SecretManager } = require(path.resolve(__dirname, '../../script-utils'));
 
 // Try to import logger, but provide fallbacks if not available
 let logInfo, logError;

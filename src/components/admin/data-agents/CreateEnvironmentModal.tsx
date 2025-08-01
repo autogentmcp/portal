@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NewEnvironment, EnvironmentType, ENVIRONMENT_TYPES, DataAgent } from './types';
 
 interface CreateEnvironmentModalProps {
@@ -11,6 +11,27 @@ interface CreateEnvironmentModalProps {
   onTestConnection: (environment: NewEnvironment) => Promise<{ success: boolean; error?: string; message?: string }>;
 }
 
+// Function to get default port for database type
+const getDefaultPort = (connectionType: string): string => {
+  const type = connectionType?.toLowerCase();
+  switch (type) {
+    case 'postgres':
+    case 'postgresql':
+      return '5432';
+    case 'mysql':
+      return '3306';
+    case 'mssql':
+    case 'sqlserver':
+      return '1433';
+    case 'db2':
+      return '50000';
+    case 'oracle':
+      return '1521';
+    default:
+      return '5432';
+  }
+};
+
 export default function CreateEnvironmentModal({
   isOpen,
   newEnvironment,
@@ -22,6 +43,20 @@ export default function CreateEnvironmentModal({
 }: CreateEnvironmentModalProps) {
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; error?: string; message?: string } | null>(null);
+  
+  // Auto-set default port when modal opens if port is empty
+  useEffect(() => {
+    if (isOpen && dataAgent?.connectionType && !newEnvironment.connectionConfig.port) {
+      const defaultPort = getDefaultPort(dataAgent.connectionType);
+      onChange({
+        ...newEnvironment,
+        connectionConfig: {
+          ...newEnvironment.connectionConfig,
+          port: defaultPort
+        }
+      });
+    }
+  }, [isOpen, dataAgent?.connectionType, newEnvironment.connectionConfig.port]);
   
   if (!isOpen) return null;
 

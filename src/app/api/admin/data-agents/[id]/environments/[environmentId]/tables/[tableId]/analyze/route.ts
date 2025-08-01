@@ -76,7 +76,7 @@ export async function POST(
     // Perform real analysis with AI-powered column descriptions
     try {
       console.log('🤖 Initializing LLM service...');
-      const llmService = getLLMService();
+      const llmService = await getLLMService();
       
       console.log('🔌 Attempting to connect to database and fetch sample data...');
       
@@ -124,27 +124,52 @@ export async function POST(
       );
       console.log('✅ Sample data retrieved:', sampleData?.length || 0, 'rows');
       
-      // Extract sample values for each column
+      // Extract sample values for each imported column only
       const columnSamples: { [columnName: string]: string[] } = {};
+      
       if (sampleData && sampleData.length > 0) {
-        console.log('🔍 Extracting sample values for columns...');
-        table.columns?.forEach((column: any) => {
+        console.log('🔍 Extracting sample values for imported columns...');
+        (table.columns || []).forEach((column: any) => {
           columnSamples[column.columnName] = sampleData
             .map((row: any) => row[column.columnName])
             .filter((value: any) => value != null)
             .slice(0, 5)
-            .map((value: any) => String(value));
+            .map((value: any) => {
+              // Handle different data types properly
+              if (value instanceof Date) {
+                return value.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+              }
+              if (typeof value === 'object' && value !== null) {
+                return JSON.stringify(value);
+              }
+              return String(value);
+            });
           console.log(`📝 Column ${column.columnName}: ${columnSamples[column.columnName]?.length || 0} sample values`);
         });
       } else {
         console.log('⚠️ No sample data available for analysis');
       }
       
-      // Process each column with AI analysis
-      console.log('🧠 Starting AI analysis for', table.columns?.length || 0, 'columns...');
-      const columnAnalyses = [];
-      for (const column of table.columns || []) {
-        console.log(`\n==============================\n🔍 Analyzing column: ${column.columnName} (${column.dataType})`);
+      // Process each column with AI analysis - only analyze columns that were actually imported
+      console.log('🧠 Starting AI analysis for', table.columns?.length || 0, 'imported columns...');
+      
+      // Define the type for column analyses
+      interface ColumnAnalysis {
+        columnName: string;
+        description: string;
+        exampleValue: string;
+        valueType: string;
+        error?: string;
+      }
+      
+      const columnAnalyses: ColumnAnalysis[] = [];
+      
+      // Only analyze columns that exist in our database (i.e., were selected during import)
+      const importedColumns = table.columns || [];
+      console.log('📋 Imported columns to analyze:', importedColumns.map((col: any) => col.columnName));
+      
+      for (const column of importedColumns) {
+        console.log(`\n==============================\n🔍 Analyzing imported column: ${column.columnName} (${column.dataType})`);
         // Use the extracted sample values for this column
         const sampleValues = columnSamples[column.columnName] || [];
         console.log(`📝 Using ${sampleValues.length} sample values for ${column.columnName}:`, sampleValues.slice(0, 3));
@@ -202,16 +227,102 @@ export async function POST(
         }
       }
 
-      console.log('📊 Analysis complete! Processed', columnAnalyses.length, 'columns');
+      console.log('📊 Column analysis complete! Processed', columnAnalyses.length, 'columns');
+
+      // Now perform comprehensive table-level analysis
+      console.log('🧠 Starting comprehensive table-level analysis...');
+      
+      let tableAnalysisSummary = `AI analysis completed for ${table.tableName}`;
+      let businessPurpose = '';
+      let dataPatterns = '';
+      let recommendations = [];
+      
+      try {
+        console.log('🔍 Preparing table analysis request...');
+        
+        // Prepare fields data for table analysis
+        const fields = table.columns.map((column: any) => {
+          const aiDescriptionData = columnAnalyses.find(ca => ca.columnName === column.columnName);
+          return {
+            name: column.columnName,
+            dataType: column.dataType,
+            isNullable: column.isNullable,
+            isPrimaryKey: column.isPrimaryKey,
+            isForeignKey: false, // We don't have FK info for BigQuery
+            isUnique: false,
+            isIndexed: false,
+            constraints: [],
+            sampleValues: sampleData && sampleData.length > 0 
+              ? sampleData.map((row: any) => row[column.columnName])
+                  .filter((val: any) => val != null)
+                  .slice(0, 5)
+                  .map((val: any) => {
+                    if (val instanceof Date) {
+                      return val.toISOString().split('T')[0];
+                    }
+                    if (typeof val === 'object' && val !== null) {
+                      return JSON.stringify(val);
+                    }
+                    return String(val);
+                  })
+              : []
+          };
+        });
+
+        const tableAnalysisRequest = {
+          tableName: table.tableName,
+          fields: fields,
+          rowCount: sampleData?.length || 0,
+          note: `Analysis of ${table.tableName} table in ${environment.name} environment`
+        };
+
+        console.log('🤖 Calling LLM for comprehensive table analysis...');
+        const tableAnalysisResponse = await llmService.analyzeTable(tableAnalysisRequest);
+        
+        console.log('✅ Table analysis response received from LLM');
+        const analysisContent = tableAnalysisResponse.content;
+        
+        // Parse the comprehensive analysis content
+        if (analysisContent && analysisContent.length > 50) {
+          tableAnalysisSummary = analysisContent;
+          
+          // Try to extract specific sections
+          const businessMatch = analysisContent.match(/\*\*Business Purpose\*\*:?\s*([^*]+)/i);
+          if (businessMatch) {
+            businessPurpose = businessMatch[1].trim();
+          }
+          
+          const patternsMatch = analysisContent.match(/\*\*Data Patterns\*\*:?\s*([^*]+)/i);
+          if (patternsMatch) {
+            dataPatterns = patternsMatch[1].trim();
+          }
+          
+          // Extract recommendations
+          const recsMatch = analysisContent.match(/\*\*Usage Recommendations\*\*:?\s*([^*]+)/i);
+          if (recsMatch) {
+            recommendations.push(recsMatch[1].trim());
+          }
+        }
+        
+        console.log('📝 Table analysis summary length:', tableAnalysisSummary.length, 'characters');
+        
+      } catch (tableAnalysisError) {
+        console.error('⚠️ Table-level analysis failed, using basic summary:', tableAnalysisError);
+        // Continue with basic analysis if table-level analysis fails
+      }
 
       const analysisResult = {
-        summary: `AI analysis completed for ${table.tableName}`,
+        summary: tableAnalysisSummary,
+        businessPurpose: businessPurpose,
+        dataPatterns: dataPatterns,
         columnsAnalyzed: columnAnalyses.length,
         columns: columnAnalyses,
         suggestedImprovements: [
           'AI-generated descriptions have been added to all columns',
           'Example values and data types have been classified',
-          'Review the descriptions for accuracy and adjust if needed'
+          'Comprehensive table analysis completed',
+          'Review the descriptions for accuracy and adjust if needed',
+          ...recommendations
         ],
         analyzedAt: new Date().toISOString()
       };

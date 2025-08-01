@@ -298,8 +298,16 @@ async function testBigQueryConnection(connectionConfig: any, credentials: any): 
     console.log('ServiceAccountJson type:', typeof credentials?.serviceAccountJson);
     
     // For BigQuery, the credentials should include serviceAccountJson
+    if (!connectionConfig.projectId) {
+      return {
+        success: false,
+        message: 'BigQuery projectId is required in connection configuration',
+        error: 'MISSING_PROJECT_ID'
+      };
+    }
+    
     let bigqueryConfig: any = {
-      projectId: connectionConfig.projectId || credentials?.projectId,
+      projectId: connectionConfig.projectId, // Always use projectId from connection config
     };
 
     // Handle service account JSON - it could be in config or credentials

@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 // GET /api/admin/applications/[id]/api-keys/[keyId]/plaintext - Get plaintext API key from vault
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string; keyId: string } }
+  { params }: { params: Promise<{ id: string; keyId: string }> }
 ) {
   try {
     const user = await getAuthUser(request)

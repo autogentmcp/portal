@@ -47,7 +47,7 @@ export async function POST(
     }));
 
     // Analyze relationships using LLM
-    const llmService = getLLMService();
+    const llmService = await getLLMService();
     const relationshipResult = await llmService.generateStructuredRelationships(tablesData);
 
     // Save the analysis to the database

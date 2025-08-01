@@ -123,7 +123,7 @@ export class HashiCorpVaultProvider extends BaseSecretProvider implements Secret
         const fullPath = `${this.mount}/data/${secretPath}`;
         logInfo(`Using KV v2 API for read, full path: ${fullPath}`);
         result = await this.client.read(fullPath);
-        logInfo(`KV v2 read result: ${JSON.stringify(result?.data)}`);
+        // logInfo(`KV v2 read result: ${JSON.stringify(result?.data)}`);
         const encodedValue = result?.data?.data?.value || null;
         return encodedValue ? this.decodeSecretValue(encodedValue) : null;
       } else {
@@ -221,7 +221,7 @@ export class HashiCorpVaultProvider extends BaseSecretProvider implements Secret
         const fullPath = `${this.mount}/data/${secretPath}`;
         logInfo(`Using KV v2 API for read, full path: ${fullPath}`);
         result = await this.client.read(fullPath);
-        logInfo(`KV v2 read result: ${JSON.stringify(result?.data)}`);
+        // logInfo(`KV v2 read result: ${JSON.stringify(result?.data)}`);
         
         if (!result?.data?.data) {
           return null;
@@ -233,7 +233,7 @@ export class HashiCorpVaultProvider extends BaseSecretProvider implements Secret
         const fullPath = `${this.mount}/${secretPath}`;
         logInfo(`Using KV v1 API for read, full path: ${fullPath}`);
         result = await this.client.read(fullPath);
-        logInfo(`KV v1 read result: ${JSON.stringify(result?.data)}`);
+        // logInfo(`KV v1 read result: ${JSON.stringify(result?.data)}`);
         
         if (!result?.data) {
           return null;

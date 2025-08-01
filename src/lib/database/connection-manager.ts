@@ -17,6 +17,9 @@ export interface DatabaseConfig {
   instance?: string;
   connectionTimeout?: number;
   applicationName?: string;
+  // Schema filtering options
+  includeSchemas?: string[]; // Only include these schemas
+  excludeSchemas?: string[]; // Exclude these schemas (in addition to system schemas)
 }
 
 export interface DatabaseCredentials {
@@ -51,6 +54,37 @@ export interface DatabaseColumn {
 
 export class DatabaseConnectionManager {
   
+  /**
+   * Build schema filter condition for SQL queries
+   */
+  private static buildSchemaFilter(
+    config: DatabaseConfig,
+    schemaColumnName: string,
+    defaultExcludedSchemas: string[]
+  ): string {
+    const conditions: string[] = [];
+    
+    // Always exclude default system schemas
+    const excludedSchemas = [...defaultExcludedSchemas];
+    
+    // Add user-specified excluded schemas
+    if (config.excludeSchemas && config.excludeSchemas.length > 0) {
+      excludedSchemas.push(...config.excludeSchemas);
+    }
+    
+    // If user specified schemas to include, only include those
+    if (config.includeSchemas && config.includeSchemas.length > 0) {
+      const includeList = config.includeSchemas.map(s => `'${s}'`).join(', ');
+      conditions.push(`${schemaColumnName} IN (${includeList})`);
+    } else {
+      // Otherwise, exclude system schemas and user-specified exclusions
+      const excludeList = excludedSchemas.map(s => `'${s}'`).join(', ');
+      conditions.push(`${schemaColumnName} NOT IN (${excludeList})`);
+    }
+    
+    return conditions.join(' AND ');
+  }
+
   /**
    * Test database connection
    */
@@ -95,6 +129,45 @@ export class DatabaseConnectionManager {
         message: 'Connection test failed',
         error: error instanceof Error ? error.message : 'Unknown error'
       };
+    }
+  }
+
+  /**
+   * Get available schemas from database
+   */
+  static async getSchemas(
+    connectionType: string,
+    config: DatabaseConfig,
+    credentials: DatabaseCredentials
+  ): Promise<string[]> {
+    
+    try {
+      switch (connectionType.toLowerCase()) {
+        case 'postgres':
+        case 'postgresql':
+          return await this.getPostgresSchemas(config, credentials);
+        
+        case 'mysql':
+          return ['information_schema']; // MySQL doesn't have schemas like PostgreSQL
+        
+        case 'mssql':
+        case 'sqlserver':
+          return await this.getMSSQLSchemas(config, credentials);
+        
+        case 'bigquery':
+          return await this.getBigQuerySchemas(config, credentials);
+        
+        case 'databricks':
+          return ['default']; // Placeholder - Databricks typically uses 'default' schema
+        
+        case 'db2':
+          return await this.getDB2Schemas(config, credentials);
+        
+        default:
+          throw new Error(`Connection type '${connectionType}' is not supported`);
+      }
+    } catch (error) {
+      throw new Error(`Failed to get schemas: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -221,6 +294,53 @@ export class DatabaseConnectionManager {
   }
 
   // PostgreSQL connection methods
+  private static async getPostgresSchemas(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<string[]> {
+    const { Client } = require('pg');
+    
+    let sslConfig: false | object = false;
+    if (config.sslMode && config.sslMode !== 'disable') {
+      sslConfig = { mode: config.sslMode };
+      
+      if (config.sslMode === 'require') {
+        sslConfig = { rejectUnauthorized: false };
+      } else {
+        sslConfig = {
+          mode: config.sslMode,
+          rejectUnauthorized: config.sslMode === 'verify-full'
+        };
+      }
+    }
+    
+    const client = new Client({
+      host: config.host,
+      port: config.port || 5432,
+      database: config.database,
+      user: credentials?.username || credentials?.user,
+      password: credentials?.password,
+      ssl: sslConfig,
+      connectionTimeoutMillis: (config.connectionTimeout || 30) * 1000,
+    });
+
+    try {
+      await client.connect();
+      
+      const defaultExcludedSchemas = ['information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'];
+      const schemaFilter = this.buildSchemaFilter(config, 'schema_name', defaultExcludedSchemas);
+      
+      const query = `
+        SELECT schema_name 
+        FROM information_schema.schemata 
+        WHERE ${schemaFilter}
+        ORDER BY schema_name;
+      `;
+      
+      const result = await client.query(query);
+      return result.rows.map((row: any) => row.schema_name);
+    } finally {
+      await client.end();
+    }
+  }
+
   private static async testPostgresConnection(config: DatabaseConfig, credentials: DatabaseCredentials) {
     try {
       const { Client } = require('pg');
@@ -296,6 +416,9 @@ export class DatabaseConnectionManager {
     try {
       await client.connect();
       
+      const defaultExcludedSchemas = ['information_schema', 'pg_catalog', 'pg_toast', 'pg_temp_1', 'pg_toast_temp_1'];
+      const schemaFilter = this.buildSchemaFilter(config, 't.table_schema', defaultExcludedSchemas);
+      
       const query = `
         SELECT 
           t.table_name as name,
@@ -306,7 +429,7 @@ export class DatabaseConnectionManager {
         LEFT JOIN pg_class c ON c.relname = t.table_name
         LEFT JOIN pg_stat_user_tables s ON s.relname = t.table_name
         WHERE t.table_type = 'BASE TABLE'
-        AND t.table_schema NOT IN ('information_schema', 'pg_catalog')
+        AND ${schemaFilter}
         ORDER BY t.table_schema, t.table_name;
       `;
       
@@ -416,7 +539,16 @@ export class DatabaseConnectionManager {
       await client.connect();
       
       const fullTableName = schemaName ? `"${schemaName}"."${tableName}"` : `"${tableName}"`;
-      const query = `SELECT * FROM ${fullTableName} LIMIT $1`;
+      
+      // Use random sampling for better data variety
+      let query: string;
+      if (limit > 50) {
+        // For larger samples, use TABLESAMPLE for performance
+        query = `SELECT * FROM ${fullTableName} TABLESAMPLE BERNOULLI(1) LIMIT $1`;
+      } else {
+        // For smaller samples, use ORDER BY RANDOM() for true randomness
+        query = `SELECT * FROM ${fullTableName} ORDER BY RANDOM() LIMIT $1`;
+      }
       
       const result = await client.query(query, [limit]);
       return result.rows;
@@ -503,6 +635,7 @@ export class DatabaseConnectionManager {
         FROM information_schema.tables
         WHERE TABLE_TYPE = 'BASE TABLE'
         AND TABLE_SCHEMA = DATABASE()
+        AND TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
         ORDER BY TABLE_NAME;
       `);
       
@@ -601,7 +734,10 @@ export class DatabaseConnectionManager {
 
     try {
       const fullTableName = schemaName ? `\`${schemaName}\`.\`${tableName}\`` : `\`${tableName}\``;
-      const [rows] = await connection.execute(`SELECT * FROM ${fullTableName} LIMIT ?`, [limit]);
+      
+      // Use random sampling for better data variety
+      const query = `SELECT * FROM ${fullTableName} ORDER BY RAND() LIMIT ?`;
+      const [rows] = await connection.execute(query, [limit]);
       return rows as any[];
     } finally {
       await connection.end();
@@ -609,6 +745,49 @@ export class DatabaseConnectionManager {
   }
 
   // MSSQL connection methods
+  private static async getMSSQLSchemas(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<string[]> {
+    const sql = require('mssql');
+    
+    const poolConfig = {
+      server: config.server || config.host,
+      port: config.port || 1433,
+      database: config.database,
+      user: credentials?.username || credentials?.user,
+      password: credentials?.password,
+      options: {
+        encrypt: config.encrypt !== false,
+        trustServerCertificate: config.trustServerCertificate || false,
+        enableArithAbort: true,
+        instanceName: config.instance || undefined,
+        ...(config.applicationName && { appName: config.applicationName }),
+      },
+      connectionTimeout: (config.connectionTimeout || 30) * 1000,
+      requestTimeout: (config.connectionTimeout || 30) * 1000,
+    };
+
+    const pool = await sql.connect(poolConfig);
+    
+    try {
+      const defaultExcludedSchemas = [
+        'sys', 'INFORMATION_SCHEMA', 'guest', 'db_accessadmin', 'db_backupoperator', 
+        'db_datareader', 'db_datawriter', 'db_ddladmin', 'db_denydatareader', 
+        'db_denydatawriter', 'db_owner', 'db_securityadmin'
+      ];
+      const schemaFilter = this.buildSchemaFilter(config, 'SCHEMA_NAME', defaultExcludedSchemas);
+      
+      const result = await pool.request().query(`
+        SELECT SCHEMA_NAME 
+        FROM INFORMATION_SCHEMA.SCHEMATA 
+        WHERE ${schemaFilter}
+        ORDER BY SCHEMA_NAME;
+      `);
+      
+      return result.recordset.map((row: any) => row.SCHEMA_NAME);
+    } finally {
+      await pool.close();
+    }
+  }
+
   private static async testMSSQLConnection(config: DatabaseConfig, credentials: DatabaseCredentials) {
     try {
       const sql = require('mssql');
@@ -670,6 +849,13 @@ export class DatabaseConnectionManager {
     const pool = await sql.connect(poolConfig);
     
     try {
+      const defaultExcludedSchemas = [
+        'sys', 'INFORMATION_SCHEMA', 'guest', 'db_accessadmin', 'db_backupoperator', 
+        'db_datareader', 'db_datawriter', 'db_ddladmin', 'db_denydatareader', 
+        'db_denydatawriter', 'db_owner', 'db_securityadmin'
+      ];
+      const schemaFilter = this.buildSchemaFilter(config, 't.TABLE_SCHEMA', defaultExcludedSchemas);
+      
       const result = await pool.request().query(`
         SELECT 
           t.TABLE_NAME as name,
@@ -681,6 +867,7 @@ export class DatabaseConnectionManager {
         LEFT JOIN sys.extended_properties ep ON ep.major_id = st.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
         LEFT JOIN sys.partitions p ON p.object_id = st.object_id AND p.index_id < 2
         WHERE t.TABLE_TYPE = 'BASE TABLE'
+        AND ${schemaFilter}
         ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;
       `);
       
@@ -779,7 +966,18 @@ export class DatabaseConnectionManager {
     
     try {
       const fullTableName = schemaName ? `[${schemaName}].[${tableName}]` : `[${tableName}]`;
-      const result = await pool.request().query(`SELECT TOP (${limit}) * FROM ${fullTableName}`);
+      
+      // Use random sampling for better data variety
+      let query: string;
+      if (limit > 50) {
+        // For larger samples, use TABLESAMPLE for performance
+        query = `SELECT TOP (${limit}) * FROM ${fullTableName} TABLESAMPLE (1 PERCENT)`;
+      } else {
+        // For smaller samples, use ORDER BY NEWID() for true randomness
+        query = `SELECT TOP (${limit}) * FROM ${fullTableName} ORDER BY NEWID()`;
+      }
+      
+      const result = await pool.request().query(query);
       return result.recordset;
     } finally {
       await pool.close();
@@ -788,9 +986,47 @@ export class DatabaseConnectionManager {
 
   // Placeholder methods for other databases (can be implemented later)
   private static async queryBigQuerySampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
-    // TODO: Implement BigQuery sample data query
-    console.log('BigQuery sample data not implemented yet');
-    return [];
+    const { BigQuery } = require('@google-cloud/bigquery');
+    
+    const bigquery = new BigQuery({
+      projectId: config.projectId,
+      keyFilename: credentials?.serviceAccountPath,
+      credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
+    });
+
+    // Use the provided schemaName, or fall back to config.database (dataset)
+    const datasetId = schemaName || config.database;
+    console.log('BigQuery sample data - using dataset:', datasetId, 'for table:', tableName);
+
+    if (!datasetId) {
+      throw new Error('No dataset specified for BigQuery sample data');
+    }
+
+    // Use TABLESAMPLE for random sampling on large tables
+    const query = `
+      SELECT *
+      FROM \`${config.projectId}.${datasetId}.${tableName}\`
+      TABLESAMPLE SYSTEM (1 PERCENT)
+      LIMIT ${limit}
+    `;
+
+    try {
+      const [rows] = await bigquery.query(query);
+      console.log(`Retrieved ${rows.length} sample rows from ${datasetId}.${tableName}`);
+      return rows;
+    } catch (error) {
+      console.error('BigQuery sample data error:', error);
+      // Fallback to simple LIMIT query if TABLESAMPLE fails
+      const fallbackQuery = `
+        SELECT *
+        FROM \`${config.projectId}.${datasetId}.${tableName}\`
+        LIMIT ${limit}
+      `;
+      
+      const [rows] = await bigquery.query(fallbackQuery);
+      console.log(`Retrieved ${rows.length} sample rows from ${datasetId}.${tableName} (fallback)`);
+      return rows;
+    }
   }
 
   private static async queryDatabricksSampleData(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string, limit: number = 10): Promise<any[]> {
@@ -806,6 +1042,19 @@ export class DatabaseConnectionManager {
   }
 
   // BigQuery connection methods
+  private static async getBigQuerySchemas(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<string[]> {
+    const { BigQuery } = require('@google-cloud/bigquery');
+    
+    const bigquery = new BigQuery({
+      projectId: config.projectId,
+      keyFilename: credentials?.serviceAccountPath,
+      credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
+    });
+
+    const [datasets] = await bigquery.getDatasets();
+    return datasets.map(dataset => dataset.id!);
+  }
+
   private static async testBigQueryConnection(config: DatabaseConfig, credentials: DatabaseCredentials) {
     try {
       const { BigQuery } = require('@google-cloud/bigquery');
@@ -841,25 +1090,56 @@ export class DatabaseConnectionManager {
       credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
     });
 
-    const [datasets] = await bigquery.getDatasets();
-    const tables: DatabaseTable[] = [];
+    // Use the database field as the dataset name for BigQuery
+    const datasetId = config.database;
+    console.log('BigQuery tables - looking for dataset:', datasetId);
 
-    for (const dataset of datasets) {
+    if (!datasetId) {
+      console.log('No dataset specified, getting all datasets');
+      const [datasets] = await bigquery.getDatasets();
+      const tables: DatabaseTable[] = [];
+
+      for (const dataset of datasets) {
+        const [datasetTables] = await dataset.getTables();
+        
+        for (const table of datasetTables) {
+          const [metadata] = await table.getMetadata();
+          
+          tables.push({
+            name: table.id!,
+            schema: dataset.id!,
+            description: metadata.description || undefined,
+            rowCount: metadata.numRows ? parseInt(metadata.numRows) : undefined
+          });
+        }
+      }
+
+      return tables;
+    }
+
+    // Get tables from specific dataset
+    try {
+      const dataset = bigquery.dataset(datasetId);
       const [datasetTables] = await dataset.getTables();
+      const tables: DatabaseTable[] = [];
       
       for (const table of datasetTables) {
         const [metadata] = await table.getMetadata();
         
         tables.push({
           name: table.id!,
-          schema: dataset.id!,
+          schema: datasetId,
           description: metadata.description || undefined,
           rowCount: metadata.numRows ? parseInt(metadata.numRows) : undefined
         });
       }
-    }
 
-    return tables;
+      console.log(`Found ${tables.length} tables in dataset ${datasetId}`);
+      return tables;
+    } catch (error) {
+      console.error(`Error accessing dataset ${datasetId}:`, error);
+      throw new Error(`Dataset '${datasetId}' not found or not accessible`);
+    }
   }
 
   private static async getBigQueryColumns(config: DatabaseConfig, credentials: DatabaseCredentials, tableName: string, schemaName?: string): Promise<DatabaseColumn[]> {
@@ -871,7 +1151,15 @@ export class DatabaseConnectionManager {
       credentials: credentials?.serviceAccountJson ? JSON.parse(credentials.serviceAccountJson) : undefined,
     });
 
-    const dataset = bigquery.dataset(schemaName || 'default');
+    // Use the provided schemaName, or fall back to config.database (dataset)
+    const datasetId = schemaName || config.database;
+    console.log('BigQuery columns - using dataset:', datasetId, 'for table:', tableName);
+
+    if (!datasetId) {
+      throw new Error('No dataset specified for BigQuery table columns');
+    }
+
+    const dataset = bigquery.dataset(datasetId);
     const table = dataset.table(tableName);
     const [metadata] = await table.getMetadata();
 
@@ -949,6 +1237,45 @@ export class DatabaseConnectionManager {
   }
 
   // IBM DB2 connection methods
+  private static async getDB2Schemas(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<string[]> {
+    const ibmdb = require('ibm_db');
+    
+    const connectionString = `DATABASE=${config.database};HOSTNAME=${config.hostname || config.host};PORT=${config.port || 50000};PROTOCOL=TCPIP;UID=${credentials?.username || credentials?.user};PWD=${credentials?.password};`;
+    
+    return new Promise((resolve, reject) => {
+      ibmdb.open(connectionString, (err: any, conn: any) => {
+        if (err) {
+          reject(new Error(`Failed to connect to DB2: ${err.message}`));
+          return;
+        }
+        
+        const defaultExcludedSchemas = [
+          'SYSIBM', 'SYSCAT', 'SYSSTAT', 'SYSPROC', 'SYSIBMADM', 'SYSTOOLS', 'SYSIBMTS', 'SYSIBMINTERNAL'
+        ];
+        const schemaFilter = this.buildSchemaFilter(config, 'SCHEMANAME', defaultExcludedSchemas);
+        
+        const query = `
+          SELECT DISTINCT SCHEMANAME 
+          FROM SYSCAT.SCHEMATA 
+          WHERE ${schemaFilter}
+          ORDER BY SCHEMANAME
+        `;
+        
+        conn.query(query, (err: any, results: any) => {
+          conn.close(() => {});
+          
+          if (err) {
+            reject(new Error(`Failed to fetch DB2 schemas: ${err.message}`));
+            return;
+          }
+          
+          const schemas = results.map((row: any) => row.SCHEMANAME);
+          resolve(schemas);
+        });
+      });
+    });
+  }
+
   private static async testDB2Connection(config: DatabaseConfig, credentials: DatabaseCredentials): Promise<{ success: boolean; message: string; error?: string }> {
     try {
       const ibmdb = require('ibm_db');
@@ -1011,8 +1338,9 @@ export class DatabaseConnectionManager {
             REMARKS as description,
             CARD as rowCount
           FROM SYSCAT.TABLES 
-          WHERE TABSCHEMA NOT IN ('SYSIBM', 'SYSCAT', 'SYSSTAT', 'SYSPROC', 'SYSIBMADM')
+          WHERE TABSCHEMA NOT IN ('SYSIBM', 'SYSCAT', 'SYSSTAT', 'SYSPROC', 'SYSIBMADM', 'SYSTOOLS', 'SYSIBMTS', 'SYSIBMINTERNAL')
           AND TYPE = 'T'
+          AND TABSCHEMA NOT LIKE 'SYS%'
           ORDER BY TABSCHEMA, TABNAME
         `;
         

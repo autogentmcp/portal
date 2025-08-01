@@ -90,7 +90,50 @@ export async function GET(
     }
 
     console.log(`Tables fetched for ${dataAgent.connectionType}:`, tables.length, 'tables');
-    return NextResponse.json(tables);
+    
+    // Get currently imported tables and columns for this environment
+    const importedTables = await (prisma.dataAgentTable as any).findMany({
+      where: {
+        dataAgentId: id,
+        environmentId: environmentId
+      },
+      include: {
+        columns: {
+          select: {
+            columnName: true
+          }
+        }
+      }
+    });
+    
+    // Create a map for quick lookup of imported tables and their columns
+    const importedTablesMap = new Map();
+    importedTables.forEach((table: any) => {
+      const key = `${table.schemaName || ''}.${table.tableName}`;
+      importedTablesMap.set(key, {
+        isImported: true,
+        importedColumns: new Set(table.columns.map((col: any) => col.columnName))
+      });
+    });
+    
+    // Mark tables and columns that are already imported
+    const tablesWithImportStatus = tables.map(table => {
+      const key = `${table.schema || ''}.${table.name}`;
+      const importInfo = importedTablesMap.get(key);
+      
+      const tableWithStatus = {
+        ...table,
+        isImported: !!importInfo?.isImported,
+        columns: (table.columns || []).map((column: any) => ({
+          ...column,
+          isImported: !!importInfo?.importedColumns.has(column.name)
+        }))
+      };
+      
+      return tableWithStatus;
+    });
+
+    return NextResponse.json(tablesWithImportStatus);
   } catch (error) {
     console.error('Error fetching available tables:', error);
     return NextResponse.json(
@@ -274,7 +317,7 @@ async function getMySQLTables(connectionConfig: any, credentials: any): Promise<
     })
     
     // Query to get tables information
-    const [rows] = await connection.execute(`
+    const [tablesRows] = await connection.execute(`
       SELECT 
         TABLE_NAME as table_name,
         TABLE_SCHEMA as table_schema,
@@ -286,13 +329,43 @@ async function getMySQLTables(connectionConfig: any, credentials: any): Promise<
       ORDER BY TABLE_NAME
     `, [connectionConfig.database])
     
+    // Query to get columns information
+    const [columnsRows] = await connection.execute(`
+      SELECT 
+        TABLE_NAME as table_name,
+        COLUMN_NAME as column_name,
+        DATA_TYPE as data_type,
+        IS_NULLABLE as is_nullable,
+        COLUMN_DEFAULT as column_default,
+        COLUMN_COMMENT as column_comment
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = ?
+      ORDER BY TABLE_NAME, ORDINAL_POSITION
+    `, [connectionConfig.database])
+    
     await connection.end()
     
-    return (rows as any[]).map(row => ({
+    // Group columns by table
+    const columnsByTable: Record<string, any[]> = {};
+    (columnsRows as any[]).forEach(col => {
+      if (!columnsByTable[col.table_name]) {
+        columnsByTable[col.table_name] = [];
+      }
+      columnsByTable[col.table_name].push({
+        name: col.column_name,
+        type: col.data_type,
+        nullable: col.is_nullable === 'YES',
+        default: col.column_default,
+        description: col.column_comment || ''
+      });
+    });
+    
+    return (tablesRows as any[]).map(row => ({
       name: row.table_name,
       schema: row.table_schema,
       rowCount: parseInt(row.estimated_rows) || 0,
-      description: row.table_comment
+      description: row.table_comment,
+      columns: columnsByTable[row.table_name] || []
     }))
   } catch (error) {
     console.warn('MySQL tables fetch error:', error instanceof Error ? error.message : 'Unknown error');
@@ -404,7 +477,7 @@ async function getPostgreSQLTables(connectionConfig: any, credentials: any): Pro
     const schema = connectionConfig.schema || 'public';
     
     // Get tables with column information
-    const query = `
+    const tablesQuery = `
       SELECT 
         t.table_name,
         t.table_schema,
@@ -418,14 +491,48 @@ async function getPostgreSQLTables(connectionConfig: any, credentials: any): Pro
       ORDER BY t.table_name
     `;
 
-    const result = await client.query(query, [schema]);
+    const tablesResult = await client.query(tablesQuery, [schema]);
+    
+    // Get column information for all tables
+    const columnsQuery = `
+      SELECT 
+        c.table_name,
+        c.column_name,
+        c.data_type,
+        c.is_nullable,
+        c.column_default,
+        pgd.description
+      FROM information_schema.columns c
+      LEFT JOIN pg_catalog.pg_statio_all_tables st ON st.relname = c.table_name
+      LEFT JOIN pg_catalog.pg_description pgd ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+      WHERE c.table_schema = $1
+      ORDER BY c.table_name, c.ordinal_position
+    `;
+    
+    const columnsResult = await client.query(columnsQuery, [schema]);
     await client.end();
 
-    return result.rows.map(row => ({
+    // Group columns by table
+    const columnsByTable: Record<string, any[]> = {};
+    columnsResult.rows.forEach(col => {
+      if (!columnsByTable[col.table_name]) {
+        columnsByTable[col.table_name] = [];
+      }
+      columnsByTable[col.table_name].push({
+        name: col.column_name,
+        type: col.data_type,
+        nullable: col.is_nullable === 'YES',
+        default: col.column_default,
+        description: col.description || ''
+      });
+    });
+
+    return tablesResult.rows.map(row => ({
       name: row.table_name,
       schema: row.table_schema,
       rowCount: parseInt(row.estimated_rows) || 0,
-      description: row.table_comment
+      description: row.table_comment,
+      columns: columnsByTable[row.table_name] || []
     }));
   } catch (error) {
     console.warn('PostgreSQL tables fetch error:', error instanceof Error ? error.message : 'Unknown error');
@@ -441,9 +548,16 @@ async function getBigQueryTables(connectionConfig: any, credentials: any): Promi
     console.log('ConnectionConfig:', JSON.stringify(connectionConfig, null, 2));
     console.log('Credentials keys:', Object.keys(credentials || {}));
     
-    // For BigQuery, the credentials should include serviceAccountJson
+    // IMPORTANT: For BigQuery, projectId and database (dataset) come from connectionConfig
+    // Only authentication credentials (serviceAccountJson) come from key vault
+    // This ensures proper separation of connection config vs sensitive credentials
+    if (!connectionConfig.projectId) {
+      console.error('BigQuery projectId is required in connection configuration');
+      return [];
+    }
+    
     let bigqueryConfig: any = {
-      projectId: connectionConfig.projectId || credentials?.projectId,
+      projectId: connectionConfig.projectId, // Always use projectId from connection config
     };
 
     // Handle service account JSON - it could be in config or credentials
@@ -498,12 +612,30 @@ async function getBigQueryTables(connectionConfig: any, credentials: any): Promi
       tables.map(async (table) => {
         try {
           const [metadata] = await table.getMetadata();
+          console.log(`BigQuery table ${table.id} metadata:`, {
+            tableId: metadata.tableReference?.tableId,
+            datasetId: metadata.tableReference?.datasetId,
+            type: metadata.type,
+            numRows: metadata.numRows
+          });
+          
+          // Get column information from schema
+          const columns = metadata.schema?.fields?.map((field: any) => ({
+            name: field.name,
+            type: field.type,
+            nullable: field.mode !== 'REQUIRED',
+            description: field.description || ''
+          })) || [];
+          
+          console.log(`BigQuery table ${table.id} columns:`, columns.length, 'columns');
+          
           return {
-            name: metadata.tableReference.tableId,
-            schema: metadata.tableReference.datasetId,
+            name: metadata.tableReference?.tableId || table.id,
+            schema: metadata.tableReference?.datasetId || datasetId,
             rowCount: parseInt(metadata.numRows) || 0,
             description: metadata.description || '',
-            type: metadata.type || 'TABLE'
+            type: metadata.type || 'TABLE',
+            columns: columns
           };
         } catch (error) {
           console.warn(`Failed to get metadata for table ${table.id}:`, error);
@@ -512,13 +644,24 @@ async function getBigQueryTables(connectionConfig: any, credentials: any): Promi
             schema: datasetId,
             rowCount: 0,
             description: '',
-            type: 'TABLE'
+            type: 'TABLE',
+            columns: []
           };
         }
       })
     );
 
-    return tableList.filter(table => table.type === 'TABLE');
+    console.log('BigQuery table list before filtering:', tableList);
+    
+    // Filter for actual tables (not views or other objects)
+    const filteredTables = tableList.filter(table => {
+      const isTable = !table.type || table.type === 'TABLE' || table.type === 'BASE_TABLE';
+      console.log(`Table ${table.name}: type=${table.type}, isTable=${isTable}`);
+      return isTable;
+    });
+    
+    console.log(`BigQuery tables after filtering: ${filteredTables.length} tables`);
+    return filteredTables;
   } catch (error) {
     console.warn('BigQuery tables fetch error:', error instanceof Error ? error.message : 'Unknown error');
     return []; // Return empty array on any error

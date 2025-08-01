@@ -43,6 +43,8 @@ export default function TableDetailPage() {
   const [fieldDescriptions, setFieldDescriptions] = useState<Record<string, string>>({});
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editedAnalysis, setEditedAnalysis] = useState("");
 
   useEffect(() => {
     fetchTableDetail();
@@ -117,6 +119,56 @@ export default function TableDetailPage() {
     } finally {
       setDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleDeleteColumn = async (columnId: string) => {
+    if (!confirm('Are you sure you want to delete this column? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/data-agents/tables/columns/${columnId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        fetchTableDetail(); // Refresh the table data
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to delete column');
+      }
+    } catch (err) {
+      console.error('Failed to delete column:', err);
+      setError('Failed to delete column');
+    }
+  };
+
+  const handleEditAnalysis = () => {
+    setEditedAnalysis(table?.analysisResult?.summary || '');
+    setShowEditModal(true);
+  };
+
+  const saveAnalysis = async () => {
+    if (!table) return;
+
+    try {
+      const response = await fetch(`/api/admin/data-agents/tables/${params.id}/analysis`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary: editedAnalysis })
+      });
+
+      if (response.ok) {
+        setShowEditModal(false);
+        fetchTableDetail(); // Refresh the table data
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to update analysis');
+      }
+    } catch (err) {
+      console.error('Failed to update analysis:', err);
+      setError('Failed to update analysis');
     }
   };
 
@@ -225,11 +277,19 @@ export default function TableDetailPage() {
           </div>
         </div>
 
-        {/* LLM Summary */}
+        {/* Table Analysis Overview */}
         {table.analysisResult?.summary && (
           <div className="mb-8">
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800">
-              <h3 className="text-lg font-semibold mb-3 text-blue-900 dark:text-blue-100">AI Analysis Summary</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100">Table Analysis Overview</h3>
+                <button
+                  onClick={handleEditAnalysis}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                >
+                  Edit Analysis
+                </button>
+              </div>
               <p className="text-blue-800 dark:text-blue-200 whitespace-pre-wrap">{table.analysisResult.summary}</p>
             </div>
           </div>
@@ -248,8 +308,7 @@ export default function TableDetailPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Field Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Data Type</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Properties</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">AI Analysis</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description & Analysis</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sample Values</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -305,23 +364,19 @@ export default function TableDetailPage() {
                           </button>
                         </div>
                       ) : (
-                        <div className="text-sm text-gray-900 dark:text-gray-100">
-                          {field.comment || field.aiDescription || (
-                            <span className="text-gray-400 dark:text-gray-500 italic">No description</span>
+                        <div className="text-sm text-gray-900 dark:text-gray-100 max-w-md">
+                          <div className="mb-2">
+                            {field.comment || (
+                              <span className="text-gray-400 dark:text-gray-500 italic">No description</span>
+                            )}
+                          </div>
+                          {field.aiDescription && (
+                            <div className="text-xs text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                              <span className="font-medium">Analysis:</span> {field.aiDescription}
+                            </div>
                           )}
                         </div>
                       )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-600 dark:text-gray-400 max-w-xs">
-                        {field.aiDescription ? (
-                          <div className="bg-green-50 dark:bg-green-900/20 p-2 rounded text-green-800 dark:text-green-200">
-                            {field.aiDescription}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500 italic">Not analyzed</span>
-                        )}
-                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -342,14 +397,22 @@ export default function TableDetailPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {editingField !== field.id && (
+                      <div className="flex gap-2">
+                        {editingField !== field.id && (
+                          <button
+                            onClick={() => setEditingField(field.id)}
+                            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
+                          >
+                            Edit
+                          </button>
+                        )}
                         <button
-                          onClick={() => setEditingField(field.id)}
-                          className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
+                          onClick={() => handleDeleteColumn(field.id)}
+                          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
                         >
-                          Edit
+                          Delete
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -358,6 +421,50 @@ export default function TableDetailPage() {
           </div>
         </div>
       </div>
+      
+      {/* Edit Analysis Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-full p-4 text-center">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditModal(false)}></div>
+            
+            <div className="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl">
+              <div className="bg-white dark:bg-gray-800 px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                    <h3 className="text-base font-semibold leading-6 text-gray-900 dark:text-gray-100 mb-4">Edit Table Analysis</h3>
+                    <div className="mt-2">
+                      <textarea
+                        value={editedAnalysis}
+                        onChange={(e) => setEditedAnalysis(e.target.value)}
+                        rows={8}
+                        className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter table analysis summary..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                <button
+                  type="button"
+                  onClick={saveAnalysis}
+                  className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white dark:bg-gray-600 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-500 hover:bg-gray-50 dark:hover:bg-gray-500 sm:mt-0 sm:w-auto"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (

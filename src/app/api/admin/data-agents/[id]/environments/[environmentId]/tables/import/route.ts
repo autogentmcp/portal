@@ -15,11 +15,42 @@ export async function POST(
 
     const { id, environmentId } = await params;
     const body = await request.json();
-    const { tables: tableNames } = body;
+    const { tables } = body;
 
-    if (!Array.isArray(tableNames) || tableNames.length === 0) {
-      return NextResponse.json({ error: 'Table names are required' }, { status: 400 });
+    if (!Array.isArray(tables) || tables.length === 0) {
+      return NextResponse.json({ error: 'Tables are required' }, { status: 400 });
     }
+
+    // Validate tables structure - each table should have name and optional columns
+    const validTables = tables.filter(table => {
+      if (typeof table === 'string') {
+        // Backward compatibility - convert string to object
+        return true;
+      }
+      return table && typeof table === 'object' && table.name;
+    });
+
+    if (validTables.length === 0) {
+      return NextResponse.json({ error: 'Valid tables are required' }, { status: 400 });
+    }
+
+    // Normalize tables to consistent format
+    const normalizedTables = validTables.map(table => {
+      if (typeof table === 'string') {
+        return { name: table, columns: [], schema: null };
+      }
+      return {
+        name: table.name,
+        columns: Array.isArray(table.columns) ? table.columns : [],
+        schema: table.schema || null
+      };
+    });
+
+    console.log('Import request with normalized tables:', normalizedTables.map(t => ({
+      name: t.name,
+      schema: t.schema,
+      columnCount: t.columns.length
+    })));
 
     // Get data agent
     const dataAgent = await prisma.dataAgent.findUnique({
@@ -65,7 +96,7 @@ export async function POST(
 
     // Validate connection configuration and schema
     const connectionConfig = environment.connectionConfig || {};
-    console.log(`Starting table import for ${dataAgent.connectionType} with ${tableNames.length} tables`);
+    console.log(`Starting table import for ${dataAgent.connectionType} with ${normalizedTables.length} tables`);
     
     // Log schema/database configuration for debugging
     switch (dataAgent.connectionType) {
@@ -104,7 +135,7 @@ export async function POST(
         environmentId,
         connectionConfig,
         credentials,
-        tableNames
+        normalizedTables
       );
     } else if (dataAgent.connectionType === 'mysql') {
       importResults = await importMySQLTables(
@@ -112,9 +143,11 @@ export async function POST(
         environmentId,
         connectionConfig,
         credentials,
-        tableNames
+        normalizedTables
       );
     } else if (dataAgent.connectionType === 'mssql' || dataAgent.connectionType === 'sqlserver') {
+      // Convert to old format temporarily
+      const tableNames = normalizedTables.map(t => t.name);
       importResults = await importSQLServerTables(
         dataAgent.id,
         environmentId,
@@ -123,6 +156,8 @@ export async function POST(
         tableNames
       );
     } else if (dataAgent.connectionType === 'db2') {
+      // Convert to old format temporarily  
+      const tableNames = normalizedTables.map(t => t.name);
       importResults = await importDB2Tables(
         dataAgent.id,
         environmentId,
@@ -131,14 +166,16 @@ export async function POST(
         tableNames
       );
     } else if (dataAgent.connectionType === 'bigquery') {
-      importResults = await importBigQueryTables(
+      importResults = await importBigQueryTablesWrapper(
         dataAgent.id,
         environmentId,
         connectionConfig,
         credentials,
-        tableNames
+        normalizedTables
       );
     } else if (dataAgent.connectionType === 'databricks') {
+      // Convert to old format temporarily
+      const tableNames = normalizedTables.map(t => t.name);
       importResults = await importDatabricksTables(
         dataAgent.id,
         environmentId,
@@ -172,7 +209,7 @@ async function importPostgreSQLTables(
   environmentId: string,
   connectionConfig: any,
   credentials: any,
-  tableNames: string[]
+  tables: Array<{ name: string; columns: string[]; schema: string | null }>
 ) {
   const { Client } = await import('pg');
   
@@ -213,9 +250,39 @@ async function importPostgreSQLTables(
 
   const schema = connectionConfig.schema || 'public';
   const importResults = [];
+  
+  // First, get all existing tables for this environment to determine what to remove
+  const existingTables = await (prisma.dataAgentTable as any).findMany({
+    where: {
+      dataAgentId,
+      environmentId
+    },
+    include: {
+      columns: true
+    }
+  });
+  
+  // Extract selected table names for comparison
+  const selectedTableNames = tables.map(t => t.name);
+  
+  // Remove tables that are no longer selected
+  const tablesToRemove = existingTables.filter((existingTable: any) => 
+    !selectedTableNames.includes(existingTable.tableName)
+  );
+  
+  console.log(`Removing ${tablesToRemove.length} unselected tables`);
+  for (const tableToRemove of tablesToRemove) {
+    await (prisma.dataAgentTable as any).delete({
+      where: { id: tableToRemove.id }
+    });
+    console.log(`Removed table: ${tableToRemove.tableName}`);
+  }
 
   try {
-    for (const tableName of tableNames) {
+    for (const tableConfig of tables) {
+      const tableName = tableConfig.name;
+      const selectedColumns = tableConfig.columns || [];
+      
       try {
         // Get table information
         const tableInfoQuery = `
@@ -278,7 +345,7 @@ async function importPostgreSQLTables(
           console.log(`Created new table: ${table.table_name}`);
         }
 
-        // Get column information
+        // Get column information for all columns in the table
         const columnsQuery = `
           SELECT 
             column_name,
@@ -295,7 +362,7 @@ async function importPostgreSQLTables(
           ORDER BY c.ordinal_position
         `;
 
-        const columns = await client.query(columnsQuery, [schema, tableName]);
+        const allColumns = await client.query(columnsQuery, [schema, tableName]);
 
         // Get primary key information
         const pkQuery = `
@@ -340,8 +407,33 @@ async function importPostgreSQLTables(
           });
         });
 
-        // Create or update column records
-        for (const column of columns.rows) {
+        // Get existing columns for this table
+        const existingColumns = await (prisma.dataAgentTableColumn as any).findMany({
+          where: { tableId: createdTable.id }
+        });
+
+        // Remove columns that are not in the selected list
+        const columnsToRemove = existingColumns.filter((existingCol: any) => 
+          selectedColumns.length > 0 && !selectedColumns.includes(existingCol.columnName)
+        );
+
+        console.log(`Removing ${columnsToRemove.length} unselected columns from table ${tableName}`);
+        for (const colToRemove of columnsToRemove) {
+          await (prisma.dataAgentTableColumn as any).delete({
+            where: { id: colToRemove.id }
+          });
+          console.log(`Removed column: ${tableName}.${colToRemove.columnName}`);
+        }
+
+        // Filter columns to only process selected ones (or all if none selected)
+        const columnsToProcess = allColumns.rows.filter((column: any) => 
+          selectedColumns.length === 0 || selectedColumns.includes(column.column_name)
+        );
+
+        console.log(`Processing ${columnsToProcess.length} selected columns for table ${tableName}`);
+
+        // Create or update selected column records
+        for (const column of columnsToProcess) {
           const existingColumn = await (prisma.dataAgentTableColumn as any).findUnique({
             where: {
               tableId_columnName: {
@@ -390,7 +482,8 @@ async function importPostgreSQLTables(
         importResults.push({
           tableName: table.table_name,
           schemaName: table.table_schema,
-          columnsImported: columns.rows.length,
+          columnsImported: columnsToProcess.length,
+          selectedColumns: selectedColumns.length,
           rowCount: parseInt(table.row_count) || 0
         });
 
@@ -411,9 +504,9 @@ async function importMySQLTables(
   environmentId: string,
   connectionConfig: any,
   credentials: any,
-  tableNames: string[]
+  tables: Array<{ name: string; columns: string[]; schema: string | null }>
 ): Promise<any[]> {
-  console.log('Starting MySQL table import for tables:', tableNames);
+  console.log('Starting MySQL table import for tables:', tables.map(t => ({ name: t.name, columnCount: t.columns.length })));
   
   try {
     const mysql = await import('mysql2/promise');
@@ -444,9 +537,13 @@ async function importMySQLTables(
     const importResults = [];
 
     try {
-      for (const tableName of tableNames) {
+      for (const tableConfig of tables) {
+        const tableName = tableConfig.name;
+        const selectedColumns = tableConfig.columns || [];
+        const schemaName = tableConfig.schema || connectionConfig.database;
+        
         try {
-          console.log(`Importing MySQL table: ${tableName}`);
+          console.log(`Importing MySQL table: ${tableName} with ${selectedColumns.length} selected columns`);
           
           // Get table information
           const [tableInfoRows] = await connection.execute(`
@@ -1054,8 +1151,13 @@ async function importBigQueryTables(
     console.log('Credentials keys:', Object.keys(credentials || {}));
     
     // For BigQuery, the credentials should include serviceAccountJson
+    if (!connectionConfig.projectId) {
+      console.error('BigQuery projectId is required in connection configuration');
+      throw new Error('BigQuery projectId is required in connection configuration');
+    }
+    
     let bigqueryConfig: any = {
-      projectId: connectionConfig.projectId || credentials?.projectId,
+      projectId: connectionConfig.projectId, // Always use projectId from connection config
     };
 
     // Handle service account JSON - it could be in config or credentials
@@ -1406,6 +1508,218 @@ async function importDatabricksTables(
 
   } catch (error) {
     console.error('Databricks table import error:', error);
+    return [];
+  }
+}
+
+// Wrapper functions to bridge new column-aware API with existing functions
+async function importBigQueryTablesWrapper(
+  dataAgentId: string,
+  environmentId: string,
+  connectionConfig: any,
+  credentials: any,
+  tables: Array<{ name: string; columns: string[]; schema: string | null }>
+): Promise<any[]> {
+  console.log('BigQuery tables import with column selection - processing', tables.length, 'tables');
+  
+  // For now, fallback to basic table import and then handle column removal
+  const tableNames = tables.map(t => t.name);
+  
+  try {
+    // Call the existing BigQuery import function if it exists
+    // Since the function doesn't exist, implement basic BigQuery import here
+    const { BigQuery } = await import('@google-cloud/bigquery');
+    
+    if (!connectionConfig.projectId) {
+      throw new Error('BigQuery projectId is required in connection configuration');
+    }
+    
+    let bigqueryConfig: any = {
+      projectId: connectionConfig.projectId,
+    };
+
+    const serviceAccountJson = connectionConfig.serviceAccountJson || credentials?.serviceAccountJson;
+    
+    if (serviceAccountJson) {
+      const parsedCredentials = typeof serviceAccountJson === 'string' 
+        ? JSON.parse(serviceAccountJson) 
+        : serviceAccountJson;
+      bigqueryConfig.credentials = parsedCredentials;
+    } else if (credentials?.serviceAccountKey) {
+      bigqueryConfig.credentials = JSON.parse(credentials.serviceAccountKey);
+    } else if (credentials?.keyFile) {
+      bigqueryConfig.keyFilename = credentials.keyFile;
+    }
+
+    const bigquery = new BigQuery(bigqueryConfig);
+    const datasetId = connectionConfig.dataset || connectionConfig.datasetId || connectionConfig.database;
+    
+    if (!datasetId) {
+      throw new Error('BigQuery dataset is required');
+    }
+
+    // First, get all existing tables for this environment to determine what to remove
+    const existingTables = await (prisma.dataAgentTable as any).findMany({
+      where: {
+        dataAgentId,
+        environmentId
+      },
+      include: {
+        columns: true
+      }
+    });
+    
+    // Extract selected table names for comparison
+    const selectedTableNames = tables.map(t => t.name);
+    
+    // Remove tables that are no longer selected
+    const tablesToRemove = existingTables.filter((existingTable: any) => 
+      !selectedTableNames.includes(existingTable.tableName)
+    );
+    
+    console.log(`Removing ${tablesToRemove.length} unselected BigQuery tables`);
+    for (const tableToRemove of tablesToRemove) {
+      await (prisma.dataAgentTable as any).delete({
+        where: { id: tableToRemove.id }
+      });
+      console.log(`Removed table: ${tableToRemove.tableName}`);
+    }
+
+    const importResults = [];
+    const dataset = bigquery.dataset(datasetId);
+
+    for (const tableConfig of tables) {
+      const tableName = tableConfig.name;
+      const selectedColumns = tableConfig.columns || [];
+      
+      try {
+        console.log(`Importing BigQuery table: ${tableName} with ${selectedColumns.length} selected columns`);
+        
+        // Get table metadata
+        const table = dataset.table(tableName);
+        const [metadata] = await table.getMetadata();
+        
+        // Get actual row count
+        let rowCount = parseInt(metadata.numRows) || 0;
+
+        // Check if table already exists for this environment
+        const existingTable = await (prisma.dataAgentTable as any).findUnique({
+          where: {
+            dataAgentId_environmentId_tableName_schemaName: {
+              dataAgentId,
+              environmentId,
+              tableName: tableName,
+              schemaName: datasetId
+            }
+          }
+        });
+
+        let createdTable;
+        if (existingTable) {
+          // Update existing table
+          createdTable = await (prisma.dataAgentTable as any).update({
+            where: { id: existingTable.id },
+            data: {
+              description: metadata.description || '',
+              rowCount: rowCount,
+              analysisStatus: 'PENDING'
+            }
+          });
+          console.log(`Updated existing BigQuery table: ${tableName}`);
+        } else {
+          // Create new table record
+          createdTable = await (prisma.dataAgentTable as any).create({
+            data: {
+              dataAgentId,
+              environmentId,
+              tableName: tableName,
+              schemaName: datasetId,
+              description: metadata.description || '',
+              rowCount: rowCount,
+              analysisStatus: 'PENDING'
+            }
+          });
+          console.log(`Created new BigQuery table: ${tableName}`);
+        }
+
+        // Get all available columns from BigQuery schema
+        const allColumns = metadata.schema?.fields || [];
+        
+        // Get existing columns for this table
+        const existingColumns = await (prisma.dataAgentTableColumn as any).findMany({
+          where: { tableId: createdTable.id }
+        });
+
+        // Remove columns that are not in the selected list
+        const columnsToRemove = existingColumns.filter((existingCol: any) => 
+          selectedColumns.length > 0 && !selectedColumns.includes(existingCol.columnName)
+        );
+
+        console.log(`Removing ${columnsToRemove.length} unselected columns from BigQuery table ${tableName}`);
+        for (const colToRemove of columnsToRemove) {
+          await (prisma.dataAgentTableColumn as any).delete({
+            where: { id: colToRemove.id }
+          });
+          console.log(`Removed column: ${tableName}.${colToRemove.columnName}`);
+        }
+
+        // Filter columns to only process selected ones (or all if none selected)
+        const columnsToProcess = allColumns.filter((column: any) => 
+          selectedColumns.length === 0 || selectedColumns.includes(column.name)
+        );
+
+        console.log(`Processing ${columnsToProcess.length} selected columns for BigQuery table ${tableName}`);
+
+        // Create or update selected column records
+        for (const column of columnsToProcess) {
+          const existingColumn = await (prisma.dataAgentTableColumn as any).findUnique({
+            where: {
+              tableId_columnName: {
+                tableId: createdTable.id,
+                columnName: column.name
+              }
+            }
+          });
+
+          const columnData = {
+            tableId: createdTable.id,
+            columnName: column.name,
+            dataType: column.type,
+            isNullable: column.mode !== 'REQUIRED',
+            defaultValue: null,
+            comment: column.description || ''
+          };
+
+          if (existingColumn) {
+            await (prisma.dataAgentTableColumn as any).update({
+              where: { id: existingColumn.id },
+              data: columnData
+            });
+          } else {
+            await (prisma.dataAgentTableColumn as any).create({
+              data: columnData
+            });
+          }
+        }
+
+        importResults.push({
+          tableName: tableName,
+          schemaName: datasetId,
+          columnsImported: columnsToProcess.length,
+          selectedColumns: selectedColumns.length,
+          rowCount: rowCount
+        });
+
+      } catch (tableError) {
+        console.error(`Error importing BigQuery table ${tableName}:`, tableError);
+      }
+    }
+
+    console.log(`BigQuery import completed. Successfully imported ${importResults.length} tables.`);
+    return importResults;
+
+  } catch (error) {
+    console.error('BigQuery table import error:', error);
     return [];
   }
 }

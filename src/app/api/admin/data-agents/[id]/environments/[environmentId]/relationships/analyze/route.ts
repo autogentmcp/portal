@@ -60,12 +60,22 @@ export async function POST(
     }));
 
     // Analyze relationships using LLM
-    const llmService = getLLMService();
+    const llmService = await getLLMService();
 
     try {
       const analysisResult = await llmService.generateStructuredRelationships(tablesData);
       
-      // Validate and store suggested relationships
+      // 🔥 CLEAR EXISTING RELATIONSHIPS FIRST - This ensures fresh analysis
+      await (prisma.dataAgentRelation as any).deleteMany({
+        where: {
+          dataAgentId: id,
+          environmentId: environmentId
+        }
+      });
+      
+      console.log('🔄 Cleared existing relationships for fresh analysis');
+      
+      // Validate and store NEW suggested relationships
       const suggestedRelationships = [];
       
       for (const rel of analysisResult.relationships) {
@@ -90,51 +100,37 @@ export async function POST(
                                rel.relationshipType === 'one_to_many' ? 'ONE_TO_MANY' :
                                rel.relationshipType === 'many_to_many' ? 'MANY_TO_MANY' : 'ONE_TO_MANY';
 
-        // Check if relationship already exists
-        const existingRelation = await (prisma.dataAgentRelation as any).findFirst({
-          where: {
+        // Create the relationship in the database (no need to check for existing since we cleared them)
+        const createdRelation = await (prisma.dataAgentRelation as any).create({
+          data: {
             dataAgentId: id,
             environmentId: environmentId,
             sourceTableId: fromTable.id,
             targetTableId: toTable.id,
             sourceColumn: rel.sourceColumn,
-            targetColumn: rel.targetColumn
-          }
-        });
-
-        if (!existingRelation) {
-          // Create the relationship in the database
-          const createdRelation = await (prisma.dataAgentRelation as any).create({
-            data: {
-              dataAgentId: id,
-              environmentId: environmentId,
-              sourceTableId: fromTable.id,
-              targetTableId: toTable.id,
-              sourceColumn: rel.sourceColumn,
-              targetColumn: rel.targetColumn,
-              relationshipType: relationshipType,
-              description: rel.description,
-              example: rel.example,
-              confidence: rel.confidence,
-              isVerified: false // Default to unverified, admin can verify later
-            }
-          });
-          
-          suggestedRelationships.push({
-            id: createdRelation.id,
-            sourceTableId: fromTable.id,
-            sourceTableName: fromTable.tableName,
-            sourceColumn: rel.sourceColumn,
-            targetTableId: toTable.id,
-            targetTableName: toTable.tableName,
             targetColumn: rel.targetColumn,
-            relationshipType: rel.relationshipType,
-            confidence: rel.confidence,
+            relationshipType: relationshipType,
             description: rel.description,
             example: rel.example,
-            isVerified: false
-          });
-        }
+            confidence: rel.confidence,
+            isVerified: false // Default to unverified, admin can verify later
+          }
+        });
+        
+        suggestedRelationships.push({
+          id: createdRelation.id,
+          sourceTableId: fromTable.id,
+          sourceTableName: fromTable.tableName,
+          sourceColumn: rel.sourceColumn,
+          targetTableId: toTable.id,
+          targetTableName: toTable.tableName,
+          targetColumn: rel.targetColumn,
+          relationshipType: rel.relationshipType,
+          confidence: rel.confidence,
+          description: rel.description,
+          example: rel.example,
+          isVerified: false
+        });
       }
 
       return NextResponse.json({

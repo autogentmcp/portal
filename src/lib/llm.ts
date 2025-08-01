@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { prisma } from './prisma';
 
 export interface LLMResponse {
   content: string;
@@ -96,17 +97,160 @@ class LLMService {
   private provider: string;
   private model: string;
 
+  // Get LLM settings from database or environment variables
+  private async getLLMSettings() {
+    try {
+      // Try to get settings from database first
+      const dbSettings = await (prisma as any).lLMSettings.findFirst({
+        where: { isActive: true },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      if (dbSettings) {
+        return {
+          provider: dbSettings.provider,
+          model: dbSettings.model,
+          apiKeyEnvVar: dbSettings.apiKeyEnvVar,
+          baseUrlEnvVar: dbSettings.baseUrlEnvVar,
+          baseUrl: dbSettings.baseUrl,
+          proxyUrl: dbSettings.proxyUrl,
+          customHeaders: dbSettings.customHeaders ? 
+            (typeof dbSettings.customHeaders === 'string' ? JSON.parse(dbSettings.customHeaders) : dbSettings.customHeaders) : {},
+          headerMappings: dbSettings.headerMappings ? 
+            (typeof dbSettings.headerMappings === 'string' ? JSON.parse(dbSettings.headerMappings) : dbSettings.headerMappings) : [],
+          caBundleEnvVar: dbSettings.caBundleEnvVar,
+          certFileEnvVar: dbSettings.certFileEnvVar,
+          keyFileEnvVar: dbSettings.keyFileEnvVar,
+          rejectUnauthorized: dbSettings.rejectUnauthorized
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to load LLM settings from database, falling back to environment variables:', error);
+    }
+
+    // Fallback to environment variables
+    return {
+      provider: process.env.LLM_PROVIDER || 'ollama',
+      model: process.env.LLM_MODEL || 'llama3.2',
+      apiKeyEnvVar: process.env.LLM_API_KEY_ENV_VAR || 'LLM_API_KEY',
+      baseUrlEnvVar: process.env.LLM_BASE_URL_ENV_VAR,
+      baseUrl: process.env.LLM_BASE_URL,
+      proxyUrl: process.env.LLM_PROXY_URL,
+      customHeaders: process.env.LLM_CUSTOM_HEADERS ? JSON.parse(process.env.LLM_CUSTOM_HEADERS) : {},
+      headerMappings: process.env.LLM_HEADER_MAPPINGS ? JSON.parse(process.env.LLM_HEADER_MAPPINGS) : [],
+      caBundleEnvVar: process.env.LLM_CA_BUNDLE_ENV_VAR,
+      certFileEnvVar: process.env.LLM_CERT_FILE_ENV_VAR,
+      keyFileEnvVar: process.env.LLM_KEY_FILE_ENV_VAR,
+      rejectUnauthorized: process.env.LLM_REJECT_UNAUTHORIZED !== 'false'
+    };
+  }
+
   constructor() {
-    this.provider = process.env.LLM_PROVIDER || 'ollama';
-    this.model = process.env.LLM_MODEL || 'llama3.2';
+    // Initialize with defaults, will be updated by init()
+    this.provider = 'ollama';
+    this.model = 'llama3.2';
+    this.client = new OpenAI({
+      baseURL: 'http://localhost:11434/v1',
+      apiKey: 'ollama',
+    });
+  }
+
+  // Initialize the LLM service with settings from database or environment
+  async init() {
+    const settings = await this.getLLMSettings();
+    this.provider = settings.provider;
+    this.model = settings.model;
     
     if (this.provider === 'openai') {
-      this.client = new OpenAI({
-        apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY,
-      });
+      // Get API key from the specified environment variable
+      const apiKey = settings.apiKeyEnvVar ? process.env[settings.apiKeyEnvVar] || '' : '';
+
+      // Prepare OpenAI client configuration
+      const clientConfig: any = {
+        apiKey,
+      };
+
+      // Set base URL (priority: baseUrlEnvVar -> baseUrl -> proxyUrl)
+      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : settings.baseUrl;
+      if (resolvedBaseUrl) {
+        clientConfig.baseURL = resolvedBaseUrl;
+      } else if (settings.proxyUrl) {
+        clientConfig.baseURL = settings.proxyUrl;
+      }
+
+      // Build complete headers from settings
+      let allHeaders: Record<string, string> = {};
+
+      // Add static custom headers
+      if (settings.customHeaders && typeof settings.customHeaders === 'object') {
+        allHeaders = { ...allHeaders, ...settings.customHeaders };
+      }
+
+      // Add dynamic headers from environment variable mappings
+      if (Array.isArray(settings.headerMappings)) {
+        settings.headerMappings.forEach(({ headerName, envVariable }: { headerName: string; envVariable: string }) => {
+          const envValue = process.env[envVariable];
+          if (envValue) {
+            allHeaders[headerName] = envValue;
+          }
+        });
+      }
+
+      // Add headers to client config if any exist
+      if (Object.keys(allHeaders).length > 0) {
+        clientConfig.defaultHeaders = allHeaders;
+      }
+
+      // SSL Certificate Configuration
+      const fs = require('fs');
+      const https = require('https');
+      
+      // Build SSL agent options
+      const sslOptions: any = {};
+      
+      // CA Bundle
+      if (settings.caBundleEnvVar && process.env[settings.caBundleEnvVar]) {
+        try {
+          sslOptions.ca = fs.readFileSync(process.env[settings.caBundleEnvVar]);
+        } catch (error) {
+          console.warn(`Failed to read CA bundle file: ${error}`);
+        }
+      }
+      
+      // Client Certificate
+      if (settings.certFileEnvVar && process.env[settings.certFileEnvVar]) {
+        try {
+          sslOptions.cert = fs.readFileSync(process.env[settings.certFileEnvVar]);
+        } catch (error) {
+          console.warn(`Failed to read client certificate file: ${error}`);
+        }
+      }
+      
+      // Client Key
+      if (settings.keyFileEnvVar && process.env[settings.keyFileEnvVar]) {
+        try {
+          sslOptions.key = fs.readFileSync(process.env[settings.keyFileEnvVar]);
+        } catch (error) {
+          console.warn(`Failed to read client key file: ${error}`);
+        }
+      }
+      
+      // Reject unauthorized certificates setting
+      if (settings.rejectUnauthorized === false) {
+        sslOptions.rejectUnauthorized = false;
+      }
+
+      // If SSL options are configured, create a custom HTTPS agent
+      if (Object.keys(sslOptions).length > 0) {
+        const agent = new https.Agent(sslOptions);
+        clientConfig.httpAgent = agent;
+      }
+
+      this.client = new OpenAI(clientConfig);
     } else if (this.provider === 'ollama') {
+      const baseURL = settings.baseUrl || 'http://localhost:11434/v1';
       this.client = new OpenAI({
-        baseURL: process.env.LLM_BASE_URL || 'http://localhost:11434/v1',
+        baseURL,
         apiKey: 'ollama', // Ollama doesn't require a real API key
       });
     } else {
@@ -209,63 +353,102 @@ class LLMService {
   }
 
   async generateBriefColumnDescription(request: BriefColumnAnalysisRequest): Promise<BriefColumnAnalysisResponse> {
-    const prompt = this.buildBriefColumnAnalysisPrompt(
-      request.columnName,
-      request.dataType,
-      request.sampleValues || [],
-      request.customPrompt
-    );
+    // Clean and limit sample values to prevent long strings
+    const cleanedSamples = (request.sampleValues || [])
+      .filter(val => val && val !== '[object Object]' && val !== 'null' && val !== 'undefined')
+      .map(val => {
+        // Truncate very long values (like password hashes)
+        if (val.length > 50) {
+          return val.substring(0, 47) + '...';
+        }
+        return val;
+      })
+      .slice(0, 3); // Only use first 3 samples
+
+    const sampleText = cleanedSamples.length > 0 
+      ? `Sample values: ${cleanedSamples.join(', ')}`
+      : 'No sample values available';
+
+    let prompt = `Analyze this database column and provide a brief description:
+
+Column: ${request.columnName}
+Data Type: ${request.dataType}
+${sampleText}`;
+
+    // Add custom prompt if provided
+    if (request.customPrompt && request.customPrompt.trim()) {
+      prompt += `\n\nCustom Instructions: ${request.customPrompt.trim()}`;
+    }
+
+    prompt += `\n\nProvide a JSON response with:
+- purpose: brief purpose of this column (what it represents)
+- sample_value: a realistic example value for this column
+- data_pattern: the pattern or category of data (e.g., "identifier", "email", "categorical", "numeric", "text", "date")`;
     
     try {
       const response = await this.client.chat.completions.create({
         model: this.model,
         messages: [
           {
+            role: 'system',
+            content: 'You are a database expert. Analyze column information and respond with valid JSON only. No additional text or explanations.',
+          },
+          {
             role: 'user',
             content: prompt,
           },
         ],
-        max_tokens: 100, // Very strict limit for brief JSON responses
-        temperature: 0.1, // Lower temperature for more consistent output
+        max_tokens: 150,
+        temperature: 0.1,
+        ...(this.provider === 'openai' && { response_format: { type: "json_object" } })
       });
 
-      const content = response.choices[0]?.message?.content || '';
+      const content = response.choices[0]?.message?.content?.trim() || '';
       
-      // Parse the structured response
-      const parsed = this.parseBriefColumnResponse(content);
-      
-      if (parsed) {
+      try {
+        // Extract JSON from markdown code blocks if present
+        let jsonStr = content;
+        const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (codeBlockMatch) {
+          jsonStr = codeBlockMatch[1].trim();
+        }
+        
+        const parsed = JSON.parse(jsonStr);
+        
+        // Validate required fields
+        if (!parsed.purpose || !parsed.sample_value || !parsed.data_pattern) {
+          throw new Error('Missing required fields in LLM response');
+        }
+
         return {
-          description: parsed.description,
-          exampleValue: parsed.exampleValue,
-          valueType: parsed.valueType,
+          description: parsed.purpose,
+          exampleValue: String(parsed.sample_value),
+          valueType: parsed.data_pattern,
           usage: response.usage ? {
             prompt_tokens: response.usage.prompt_tokens,
             completion_tokens: response.usage.completion_tokens,
             total_tokens: response.usage.total_tokens,
           } : undefined,
         };
-      } else {
-        // Fallback if parsing fails
-        return {
-          description: `${request.columnName.replace(/_/g, ' ').toLowerCase()} field`,
-          exampleValue: this.generateFallbackExample(request.dataType, request.sampleValues || []),
-          valueType: this.categorizeDataType(request.dataType),
-          usage: response.usage ? {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: response.usage.completion_tokens,
-            total_tokens: response.usage.total_tokens,
-          } : undefined,
-        };
+      } catch (parseError) {
+        console.warn('Failed to parse LLM JSON response:', parseError);
+        console.warn('Raw LLM response:', content);
+        
+        // Fallback to basic description
+        return this.createFallbackResponse(request);
       }
     } catch (error) {
-      // Fallback to basic description if AI fails
-      return {
-        description: `${request.columnName.replace(/_/g, ' ').toLowerCase()} field`,
-        exampleValue: this.generateFallbackExample(request.dataType, request.sampleValues || []),
-        valueType: this.categorizeDataType(request.dataType),
-      };
+      console.warn('LLM request failed:', error);
+      return this.createFallbackResponse(request);
     }
+  }
+
+  private createFallbackResponse(request: BriefColumnAnalysisRequest): BriefColumnAnalysisResponse {
+    return {
+      description: `${request.columnName.replace(/_/g, ' ').toLowerCase()} field`,
+      exampleValue: this.generateFallbackExample(request.dataType, request.sampleValues || []),
+      valueType: this.categorizeDataType(request.dataType),
+    };
   }
 
   async generateTableRelationships(tables: Array<{
@@ -370,39 +553,115 @@ class LLMService {
       isUnique: boolean;
     }>;
   }>): Promise<StructuredRelationshipResponse> {
-    const prompt = this.buildStructuredRelationshipPrompt(tables);
     
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a database expert. Analyze tables and return both a text analysis AND structured JSON data for relationships. Be precise and only suggest relationships with high confidence.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: 10000,
-        temperature: 0.1,
-      });
-
-      const content = response.choices[0]?.message?.content || '';
+      // Build a comprehensive analysis prompt
+      const prompt = this.buildStructuredRelationshipPrompt(tables);
       
-      // Try to parse structured data from the response
-      const { analysis, relationships } = this.parseStructuredRelationshipResponse(content);
+      // Try structured output if supported (OpenAI), otherwise use structured prompting
+      if (this.provider === 'openai' && this.model.includes('gpt-4')) {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a database expert. Analyze tables and suggest relationships. Return only valid JSON with no additional text.',
+            },
+            {
+              role: 'user',
+              content: `${prompt}\n\nReturn ONLY a JSON object with this exact structure:
+{
+  "analysis": "text analysis of the database structure",
+  "relationships": [
+    {
+      "sourceTable": "table_name",
+      "sourceColumn": "column_name", 
+      "targetTable": "table_name",
+      "targetColumn": "column_name",
+      "relationshipType": "one_to_one|one_to_many|many_to_many",
+      "confidence": 0.9,
+      "description": "explanation of the relationship",
+      "example": "optional example"
+    }
+  ]
+}`
+            },
+          ],
+          max_tokens: 10000,
+          temperature: 0.1,
+          response_format: { type: "json_object" }
+        });
 
-      return {
-        analysis,
-        relationships,
-        usage: response.usage ? {
-          prompt_tokens: response.usage.prompt_tokens,
-          completion_tokens: response.usage.completion_tokens,
-          total_tokens: response.usage.total_tokens,
-        } : undefined,
-      };
+        const content = response.choices[0]?.message?.content || '{}';
+        
+        try {
+          const parsed = JSON.parse(content);
+          
+          // Validate and filter relationships
+          const validRelationships = (parsed.relationships || []).filter((rel: any) => 
+            rel.sourceTable && rel.sourceColumn && 
+            rel.targetTable && rel.targetColumn &&
+            typeof rel.confidence === 'number' && rel.confidence >= 0.7 &&
+            ['one_to_one', 'one_to_many', 'many_to_many'].includes(rel.relationshipType)
+          );
+
+          return {
+            analysis: parsed.analysis || 'Database relationship analysis completed.',
+            relationships: validRelationships,
+            usage: response.usage ? {
+              prompt_tokens: response.usage.prompt_tokens,
+              completion_tokens: response.usage.completion_tokens,
+              total_tokens: response.usage.total_tokens,
+            } : undefined,
+          };
+        } catch (parseError) {
+          console.error('Failed to parse structured JSON response:', parseError);
+          console.error('Raw response:', content);
+          
+          // Fallback to manual parsing
+          const fallbackResult = this.parseStructuredRelationshipResponse(content);
+          return {
+            ...fallbackResult,
+            usage: response.usage ? {
+              prompt_tokens: response.usage.prompt_tokens,
+              completion_tokens: response.usage.completion_tokens,
+              total_tokens: response.usage.total_tokens,
+            } : undefined,
+          };
+        }
+      } else {
+        // For other providers, use structured prompting
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a database expert. Analyze tables and return both a text analysis AND structured JSON data for relationships. Be precise and only suggest relationships with high confidence.',
+            },
+            {
+              role: 'user',
+              content: this.buildStructuredRelationshipPrompt(tables),
+            },
+          ],
+          max_tokens: 10000,
+          temperature: 0.1,
+        });
+
+        const content = response.choices[0]?.message?.content || '';
+        
+        // Try to parse structured data from the response
+        const { analysis, relationships } = this.parseStructuredRelationshipResponse(content);
+
+        return {
+          analysis,
+          relationships,
+          usage: response.usage ? {
+            prompt_tokens: response.usage.prompt_tokens,
+            completion_tokens: response.usage.completion_tokens,
+            total_tokens: response.usage.total_tokens,
+          } : undefined,
+        };
+      }
     } catch (error) {
       throw new Error(`LLM structured relationship analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -859,101 +1118,6 @@ Format your response as:
     return content.substring(start, end).trim();
   }
 
-  private buildBriefColumnAnalysisPrompt(columnName: string, dataType: string, sampleValues: string[], customPrompt?: string): string {
-    // Clean and limit sample values to prevent long strings
-    const cleanedSamples = sampleValues
-      .filter(val => val && val !== '[object Object]')
-      .map(val => {
-        // Truncate very long values (like password hashes)
-        if (val.length > 20) {
-          return val.substring(0, 17) + '...';
-        }
-        return val;
-      })
-      .slice(0, 2); // Only use first 2 samples
-
-    const sampleText = cleanedSamples.length > 0 
-      ? `Samples: ${cleanedSamples.join(', ')}`
-      : 'No samples';
-
-    let prompt = `Column: ${columnName} 
-${sampleText}`;
-
-    // Add custom prompt if provided
-    if (customPrompt && customPrompt.trim()) {
-      prompt += `\n\nCustom Instructions: ${customPrompt.trim()}`;
-    }
-
-    prompt += `
-
-Return ONLY valid JSON:
-{"purpose":"brief purpose (no data types)","sample_value":"short example","data_pattern":"pattern type"}
-
-Examples:
-{"purpose":"user identifier","sample_value":"user123","data_pattern":"alphanumeric"}
-{"purpose":"email address","sample_value":"user@domain.com","data_pattern":"email"}
-{"purpose":"user role","sample_value":"admin","data_pattern":"categorical"}
-{"purpose":"password hash","sample_value":"$2b$10...","data_pattern":"encrypted"}
-
-ONLY JSON, no other text.`;
-
-    return prompt;
-  }
-
-  private parseBriefColumnResponse(content: string): BriefColumnAnalysisResponse | null {
-    try {
-      // Clean the content to extract just the JSON
-      const cleanContent = content.trim();
-      
-      // Try to find JSON in the response
-      let jsonStr = cleanContent;
-      
-      // If wrapped in code blocks, extract the JSON
-      const codeBlockMatch = cleanContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (codeBlockMatch) {
-        jsonStr = codeBlockMatch[1].trim();
-      }
-      
-      // Handle truncated JSON - try to complete it
-      if (jsonStr.includes('"purpose"') && !jsonStr.endsWith('}')) {
-        // Try to find the last complete field and close the JSON
-        const lastQuote = jsonStr.lastIndexOf('"');
-        if (lastQuote > 0) {
-          // Find the start of the incomplete value
-          const beforeLastQuote = jsonStr.substring(0, lastQuote);
-          const lastColon = beforeLastQuote.lastIndexOf(':');
-          if (lastColon > 0) {
-            // Truncate to before the incomplete field and close the JSON
-            const beforeIncompleteField = jsonStr.substring(0, lastColon);
-            const lastComma = beforeIncompleteField.lastIndexOf(',');
-            if (lastComma > 0) {
-              jsonStr = jsonStr.substring(0, lastComma) + '}';
-            }
-          }
-        }
-      }
-      
-      // Parse the JSON
-      const parsed = JSON.parse(jsonStr);
-      
-      // Validate required fields for new structure
-      if (!parsed.purpose || !parsed.sample_value || !parsed.data_pattern) {
-        return null;
-      }
-
-      // Convert to the expected response format - use just the purpose as description
-      return {
-        description: parsed.purpose, // Just the purpose, not the full JSON
-        exampleValue: parsed.sample_value,
-        valueType: parsed.data_pattern
-      };
-    } catch (error) {
-      console.warn('Failed to parse brief column JSON response:', error);
-      console.warn('Raw content:', content);
-      return null;
-    }
-  }
-
   private generateFallbackExample(dataType: string, sampleValues: string[]): string {
     // Don't use real sample values to avoid storing sensitive data
     const typeMap: { [key: string]: string } = {
@@ -1016,9 +1180,10 @@ ONLY JSON, no other text.`;
 // Singleton instance
 let llmService: LLMService | null = null;
 
-export function getLLMService(): LLMService {
+export async function getLLMService(): Promise<LLMService> {
   if (!llmService) {
     llmService = new LLMService();
+    await llmService.init();
   }
   return llmService;
 }

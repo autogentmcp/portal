@@ -85,6 +85,7 @@ function DataAgentDetailPageContent() {
   const [loadingTables, setLoadingTables] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [selectedColumns, setSelectedColumns] = useState<Record<string, string[]>>({});
   const [importingTables, setImportingTables] = useState(false);
   
   // Relationship states
@@ -189,6 +190,28 @@ function DataAgentDetailPageContent() {
       if (response.ok) {
         const environment = await response.json();
         setShowCreateEnvironmentModal(false);
+        
+        // Reset newEnvironment with proper default port
+        const getDefaultPort = (connectionType: string): string => {
+          const type = connectionType?.toLowerCase();
+          switch (type) {
+            case 'postgres':
+            case 'postgresql':
+              return '5432';
+            case 'mysql':
+              return '3306';
+            case 'mssql':
+            case 'sqlserver':
+              return '1433';
+            case 'db2':
+              return '50000';
+            case 'oracle':
+              return '1521';
+            default:
+              return '5432';
+          }
+        };
+        
         setNewEnvironment({
           name: '',
           description: '',
@@ -196,7 +219,7 @@ function DataAgentDetailPageContent() {
           environmentType: 'production',
           connectionConfig: {
             host: '',
-            port: '5432',
+            port: dataAgent.connectionType ? getDefaultPort(dataAgent.connectionType) : '5432',
             database: '',
             schema: ''
           },
@@ -423,9 +446,17 @@ function DataAgentDetailPageContent() {
     try {
       const response = await fetch(`/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/tables/available`);
       if (response.ok) {
-        const tables = await response.json();
-        setAvailableTables(tables);
+        const data = await response.json();
+        // API returns tables array directly, not wrapped in { tables: [...] }
+        setAvailableTables(Array.isArray(data) ? data : []);
         setShowImportModal(true);
+      } else {
+        const errorData = await response.json();
+        addNotification({
+          type: 'error',
+          title: 'Failed to Load Tables',
+          message: errorData.error || 'Failed to fetch available tables'
+        });
       }
     } catch (err) {
       console.error('Failed to fetch available tables:', err);
@@ -444,23 +475,37 @@ function DataAgentDetailPageContent() {
     
     setImportingTables(true);
     try {
+      // Prepare the payload with selected tables and their columns
+      const tablesToImport = selectedTables.map(tableName => {
+        const tableInfo = availableTables.find(t => t.name === tableName);
+        const selectedCols = selectedColumns[tableName] || [];
+        
+        return {
+          name: tableName,
+          schema: tableInfo?.schema,
+          columns: selectedCols.length > 0 ? selectedCols : undefined // If no columns selected, import all
+        };
+      });
+
       const response = await fetch(`/api/admin/data-agents/${params.id}/environments/${activeEnvironmentId}/tables/import`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ tables: selectedTables }),
+        body: JSON.stringify({ tables: tablesToImport }),
       });
 
       if (response.ok) {
+        const data = await response.json();
         setShowImportModal(false);
         setSelectedTables([]);
+        setSelectedColumns({});
         await fetchDataAgent();
         await fetchEnvironmentTables(); // Update tables for diagram
         addNotification({
           type: 'success',
           title: 'Import Successful',
-          message: 'Tables imported successfully!'
+          message: `Successfully imported ${data.importedCount || selectedTables.length} table(s)`
         });
       } else {
         const errorData = await response.json();
@@ -1004,10 +1049,17 @@ function DataAgentDetailPageContent() {
           isOpen={showImportModal}
           availableTables={availableTables}
           selectedTables={selectedTables}
+          selectedColumns={selectedColumns}
           importingTables={importingTables}
           onClose={() => setShowImportModal(false)}
           onImport={handleImportTables}
           onSelectionChange={setSelectedTables}
+          onColumnSelectionChange={(tableName: string, columns: string[]) => {
+            setSelectedColumns(prev => ({
+              ...prev,
+              [tableName]: columns
+            }));
+          }}
         />
 
         <EditCredentialsModal

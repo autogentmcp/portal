@@ -222,7 +222,7 @@ class HashiCorpVaultProvider extends base_provider_1.BaseSecretProvider {
                 const fullPath = `${this.mount}/data/${secretPath}`;
                 (0, logger_1.logInfo)(`Using KV v2 API for read, full path: ${fullPath}`);
                 result = await this.client.read(fullPath);
-                (0, logger_1.logInfo)(`KV v2 read result: ${JSON.stringify(result?.data)}`);
+                // (0, logger_1.logInfo)(`KV v2 read result: ${JSON.stringify(result?.data)}`);
                 if (!result?.data?.data) {
                     return null;
                 }
@@ -233,7 +233,7 @@ class HashiCorpVaultProvider extends base_provider_1.BaseSecretProvider {
                 const fullPath = `${this.mount}/${secretPath}`;
                 (0, logger_1.logInfo)(`Using KV v1 API for read, full path: ${fullPath}`);
                 result = await this.client.read(fullPath);
-                (0, logger_1.logInfo)(`KV v1 read result: ${JSON.stringify(result?.data)}`);
+                // (0, logger_1.logInfo)(`KV v1 read result: ${JSON.stringify(result?.data)}`);
                 if (!result?.data) {
                     return null;
                 }

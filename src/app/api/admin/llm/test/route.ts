@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const llmService = getLLMService();
+    const llmService = await getLLMService();
     const result = await llmService.testConnection();
 
     return NextResponse.json(result);

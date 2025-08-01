@@ -250,3 +250,25 @@ model User {
 
   @@map("users")
 }
+
+model LLMSettings {
+  id             String    @id @default(cuid())
+  provider       String    @default("ollama")  // "openai" or "ollama"
+  model          String    @default("llama3.2:latest")
+  apiKeyEnvVar   String?   // Environment variable name containing API key
+  baseUrlEnvVar  String?   // Environment variable name containing base URL (for security)
+  baseUrl        String?   // Direct base URL (fallback, less secure)
+  proxyUrl       String?
+  customHeaders  Json?     // Custom headers as JSON
+  headerMappings Json?     // Header to environment variable mappings
+  // SSL Certificate Configuration
+  caBundleEnvVar String?   // Environment variable name containing CA bundle file path
+  certFileEnvVar String?   // Environment variable name containing client certificate file path
+  keyFileEnvVar  String?   // Environment variable name containing client key file path
+  rejectUnauthorized Boolean @default(true) // Whether to reject unauthorized certificates
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("llm_settings")
+}
