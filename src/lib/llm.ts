@@ -136,6 +136,7 @@ class LLMService {
       baseUrlEnvVar: process.env.LLM_BASE_URL_ENV_VAR,
       baseUrl: process.env.LLM_BASE_URL,
       proxyUrl: process.env.LLM_PROXY_URL,
+      proxyUrlEnvVar: process.env.LLM_PROXY_URL_ENV_VAR,
       customHeaders: process.env.LLM_CUSTOM_HEADERS ? JSON.parse(process.env.LLM_CUSTOM_HEADERS) : {},
       headerMappings: process.env.LLM_HEADER_MAPPINGS ? JSON.parse(process.env.LLM_HEADER_MAPPINGS) : [],
       caBundleEnvVar: process.env.LLM_CA_BUNDLE_ENV_VAR,
@@ -170,12 +171,14 @@ class LLMService {
         apiKey,
       };
 
-      // Set base URL (priority: baseUrlEnvVar -> baseUrl -> proxyUrl)
+      // Set base URL (priority: baseUrlEnvVar -> baseUrl -> proxyUrlEnvVar -> proxyUrl)
       const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : settings.baseUrl;
+      const resolvedProxyUrl = settings.proxyUrlEnvVar ? process.env[settings.proxyUrlEnvVar] : settings.proxyUrl;
+      
       if (resolvedBaseUrl) {
         clientConfig.baseURL = resolvedBaseUrl;
-      } else if (settings.proxyUrl) {
-        clientConfig.baseURL = settings.proxyUrl;
+      } else if (resolvedProxyUrl) {
+        clientConfig.baseURL = resolvedProxyUrl;
       }
 
       // Build complete headers from settings
@@ -208,6 +211,9 @@ class LLMService {
       // Build SSL agent options
       const sslOptions: any = {};
       
+      // Reject unauthorized certificates setting (default: true for security)
+      sslOptions.rejectUnauthorized = settings.rejectUnauthorized !== false;
+      
       // CA Bundle
       if (settings.caBundleEnvVar && process.env[settings.caBundleEnvVar]) {
         try {
@@ -234,17 +240,10 @@ class LLMService {
           console.warn(`Failed to read client key file: ${error}`);
         }
       }
-      
-      // Reject unauthorized certificates setting
-      if (settings.rejectUnauthorized === false) {
-        sslOptions.rejectUnauthorized = false;
-      }
 
-      // If SSL options are configured, create a custom HTTPS agent
-      if (Object.keys(sslOptions).length > 0) {
-        const agent = new https.Agent(sslOptions);
-        clientConfig.httpAgent = agent;
-      }
+      // Always create an HTTPS agent with SSL options (even if just rejectUnauthorized)
+      const agent = new https.Agent(sslOptions);
+      clientConfig.httpAgent = agent;
 
       this.client = new OpenAI(clientConfig);
     } else if (this.provider === 'ollama') {

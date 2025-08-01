@@ -11,6 +11,7 @@ interface LLMSettings {
   baseUrl?: string
   baseUrlEnvVar?: string
   proxyUrl?: string
+  proxyUrlEnvVar?: string
   customHeaders?: Record<string, string>
   headerMappings?: Array<{ headerName: string; envVariable: string }>
   // SSL Certificate Configuration
@@ -332,7 +333,24 @@ export default function AdminSettingsPage() {
 
                 <div>
                   <label htmlFor="proxyUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Proxy URL (Optional)
+                    Proxy URL Environment Variable (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    id="proxyUrlEnvVar"
+                    value={llmSettings.proxyUrlEnvVar || ''}
+                    onChange={(e) => updateSettings({ proxyUrlEnvVar: e.target.value })}
+                    placeholder="OPENAI_PROXY_URL"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Environment variable containing the proxy URL for OpenAI API calls.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="proxyUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Proxy URL (Optional - Fallback)
                   </label>
                   <input
                     type="url"
@@ -343,7 +361,7 @@ export default function AdminSettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Route OpenAI API calls through a proxy server.
+                    Direct proxy URL (used only if environment variable above is not set).
                   </p>
                 </div>
 

@@ -47,6 +47,7 @@ You can configure these settings through the Admin UI:
    - **CA Bundle Environment Variable**: Name of env var containing CA bundle file path
    - **Client Certificate File Environment Variable**: Name of env var containing cert file path
    - **Client Key File Environment Variable**: Name of env var containing key file path
+   - **Proxy URL Environment Variable**: Name of env var containing proxy URL (optional)
    - **Reject Unauthorized Certificates**: Toggle certificate validation
 
 ## 📝 Example Configurations
@@ -72,11 +73,13 @@ LLM_MODEL=gpt-4o
 LLM_API_KEY_ENV_VAR=OPENAI_API_KEY
 LLM_CERT_FILE_ENV_VAR=CLIENT_CERT_PATH
 LLM_KEY_FILE_ENV_VAR=CLIENT_KEY_PATH
+LLM_PROXY_URL_ENV_VAR=OPENAI_PROXY_URL
 
-# File paths and API key
+# File paths, proxy URL, and API key
 OPENAI_API_KEY=sk-your-api-key-here
 CLIENT_CERT_PATH=/etc/ssl/certs/client.crt
 CLIENT_KEY_PATH=/etc/ssl/private/client.key
+OPENAI_PROXY_URL=https://corporate-proxy.example.com/openai
 ```
 
 ### Example 3: Testing with Self-Signed Certificates

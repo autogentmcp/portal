@@ -258,7 +258,8 @@ model LLMSettings {
   apiKeyEnvVar   String?   // Environment variable name containing API key
   baseUrlEnvVar  String?   // Environment variable name containing base URL (for security)
   baseUrl        String?   // Direct base URL (fallback, less secure)
-  proxyUrl       String?
+  proxyUrlEnvVar String?   // Environment variable name containing proxy URL (for security)
+  proxyUrl       String?   // Direct proxy URL (fallback, less secure)
   customHeaders  Json?     // Custom headers as JSON
   headerMappings Json?     // Header to environment variable mappings
   // SSL Certificate Configuration

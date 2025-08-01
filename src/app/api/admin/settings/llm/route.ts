@@ -9,6 +9,7 @@ interface LLMSettings {
   baseUrl?: string;
   baseUrlEnvVar?: string;  // Environment variable name for base URL (security)
   proxyUrl?: string;
+  proxyUrlEnvVar?: string; // Environment variable name for proxy URL (security)
   customHeaders?: Record<string, string>;
   headerMappings?: Array<{ headerName: string; envVariable: string }>;
   // SSL Certificate Configuration
@@ -63,6 +64,7 @@ function getCurrentSettings(): LLMSettings {
     apiKeyEnvVar,
     baseUrl: process.env.LLM_BASE_URL || 'http://localhost:11434/v1',
     proxyUrl: process.env.LLM_PROXY_URL || '',
+    proxyUrlEnvVar: process.env.LLM_PROXY_URL_ENV_VAR || '',
     customHeaders: allHeaders,
     headerMappings,
     // SSL Certificate Configuration
@@ -129,6 +131,7 @@ export async function GET() {
         baseUrl: dbSettings.baseUrl || '',
         baseUrlEnvVar: dbSettings.baseUrlEnvVar || '',
         proxyUrl: dbSettings.proxyUrl || '',
+        proxyUrlEnvVar: dbSettings.proxyUrlEnvVar || '',
         customHeaders: allHeaders,
         headerMappings,
         // SSL Certificate Configuration
@@ -153,7 +156,8 @@ export async function GET() {
       caBundleEnvVar: settings.caBundleEnvVar || '',
       certFileEnvVar: settings.certFileEnvVar || '',
       keyFileEnvVar: settings.keyFileEnvVar || '',
-      rejectUnauthorized: settings.rejectUnauthorized !== undefined ? settings.rejectUnauthorized : true
+      rejectUnauthorized: settings.rejectUnauthorized !== undefined ? settings.rejectUnauthorized : true,
+      proxyUrlEnvVar: settings.proxyUrlEnvVar || ''
     });
   } catch (error) {
     console.error('Error getting LLM settings:', error);
@@ -217,6 +221,7 @@ export async function POST(request: NextRequest) {
         apiKeyEnvVar: settings.apiKeyEnvVar || null,
         baseUrlEnvVar: settings.baseUrlEnvVar || null,
         baseUrl: settings.baseUrl || null,
+        proxyUrlEnvVar: settings.proxyUrlEnvVar || null,
         proxyUrl: settings.proxyUrl || null,
         customHeaders: settings.customHeaders ? JSON.stringify(settings.customHeaders) : null,
         headerMappings: settings.headerMappings ? JSON.stringify(settings.headerMappings) : null,
