@@ -653,11 +653,14 @@ async function getBigQueryTables(connectionConfig: any, credentials: any): Promi
 
     console.log('BigQuery table list before filtering:', tableList);
     
-    // Filter for actual tables (not views or other objects)
+    // Filter for actual tables and views (not other objects)
     const filteredTables = tableList.filter(table => {
-      const isTable = !table.type || table.type === 'TABLE' || table.type === 'BASE_TABLE';
-      console.log(`Table ${table.name}: type=${table.type}, isTable=${isTable}`);
-      return isTable;
+      const isTableOrView = !table.type || 
+        table.type === 'TABLE' || 
+        table.type === 'BASE_TABLE' || 
+        table.type === 'VIEW';
+      console.log(`Table ${table.name}: type=${table.type}, isTableOrView=${isTableOrView}`);
+      return isTableOrView;
     });
     
     console.log(`BigQuery tables after filtering: ${filteredTables.length} tables`);
