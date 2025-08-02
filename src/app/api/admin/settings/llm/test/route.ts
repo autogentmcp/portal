@@ -6,8 +6,8 @@ interface LLMSettings {
   model: string;
   apiKey?: string;
   apiKeyEnvVar?: string;
-  baseUrl?: string;
-  proxyUrl?: string;
+  baseUrlEnvVar?: string;
+  proxyUrlEnvVar?: string;
   customHeaders?: Record<string, string>;
   headerMappings?: Array<{ headerName: string; envVariable: string }>;
 }
@@ -43,12 +43,14 @@ export async function POST(request: NextRequest) {
         apiKey,
       };
 
-      // Set base URL (for proxy or custom endpoint)
-      if (settings.baseUrl) {
-        clientConfig.baseURL = settings.baseUrl;
-      } else if (settings.proxyUrl) {
-        // If proxy URL is provided without base URL, use proxy for OpenAI
-        clientConfig.baseURL = settings.proxyUrl;
+      // Set base URL (priority: proxyUrlEnvVar -> baseUrlEnvVar -> OpenAI default)
+      const resolvedProxyUrl = settings.proxyUrlEnvVar ? process.env[settings.proxyUrlEnvVar] : null;
+      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : null;
+      
+      if (resolvedProxyUrl) {
+        clientConfig.baseURL = resolvedProxyUrl;
+      } else if (resolvedBaseUrl) {
+        clientConfig.baseURL = resolvedBaseUrl;
       }
 
       // Build complete headers from custom headers and environment variable mappings
@@ -76,15 +78,12 @@ export async function POST(request: NextRequest) {
 
       client = new OpenAI(clientConfig);
     } else if (settings.provider === 'ollama') {
-      if (!settings.baseUrl) {
-        return NextResponse.json({
-          success: false,
-          message: 'Base URL is required for Ollama provider'
-        });
-      }
-
+      // For Ollama, use baseUrlEnvVar if set, otherwise default to localhost
+      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : null;
+      const baseURL = resolvedBaseUrl || 'http://localhost:11434/v1';
+      
       client = new OpenAI({
-        baseURL: settings.baseUrl,
+        baseURL,
         apiKey: 'ollama', // Ollama doesn't require a real API key
       });
     } else {
