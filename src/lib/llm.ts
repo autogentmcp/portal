@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { prisma } from './prisma';
+import { getSecureLLMConfig } from './secure-llm-config';
 
 export interface LLMResponse {
   content: string;
@@ -97,52 +97,6 @@ class LLMService {
   private provider: string;
   private model: string;
 
-  // Get LLM settings from database or environment variables
-  private async getLLMSettings() {
-    try {
-      // Try to get settings from database first
-      const dbSettings = await (prisma as any).lLMSettings.findFirst({
-        where: { isActive: true },
-        orderBy: { updatedAt: 'desc' }
-      });
-
-      if (dbSettings) {
-        return {
-          provider: dbSettings.provider,
-          model: dbSettings.model,
-          apiKeyEnvVar: dbSettings.apiKeyEnvVar,
-          baseUrlEnvVar: dbSettings.baseUrlEnvVar,
-          proxyUrlEnvVar: dbSettings.proxyUrlEnvVar,
-          customHeaders: dbSettings.customHeaders ? 
-            (typeof dbSettings.customHeaders === 'string' ? JSON.parse(dbSettings.customHeaders) : dbSettings.customHeaders) : {},
-          headerMappings: dbSettings.headerMappings ? 
-            (typeof dbSettings.headerMappings === 'string' ? JSON.parse(dbSettings.headerMappings) : dbSettings.headerMappings) : [],
-          caBundleEnvVar: dbSettings.caBundleEnvVar,
-          certFileEnvVar: dbSettings.certFileEnvVar,
-          keyFileEnvVar: dbSettings.keyFileEnvVar,
-          rejectUnauthorized: dbSettings.rejectUnauthorized
-        };
-      }
-    } catch (error) {
-      console.warn('Failed to load LLM settings from database, falling back to environment variables:', error);
-    }
-
-    // Fallback to environment variables
-    return {
-      provider: process.env.LLM_PROVIDER || 'ollama',
-      model: process.env.LLM_MODEL || 'llama3.2',
-      apiKeyEnvVar: process.env.LLM_API_KEY_ENV_VAR || 'LLM_API_KEY',
-      baseUrlEnvVar: process.env.LLM_BASE_URL_ENV_VAR,
-      proxyUrlEnvVar: process.env.LLM_PROXY_URL_ENV_VAR,
-      customHeaders: process.env.LLM_CUSTOM_HEADERS ? JSON.parse(process.env.LLM_CUSTOM_HEADERS) : {},
-      headerMappings: process.env.LLM_HEADER_MAPPINGS ? JSON.parse(process.env.LLM_HEADER_MAPPINGS) : [],
-      caBundleEnvVar: process.env.LLM_CA_BUNDLE_ENV_VAR,
-      certFileEnvVar: process.env.LLM_CERT_FILE_ENV_VAR,
-      keyFileEnvVar: process.env.LLM_KEY_FILE_ENV_VAR,
-      rejectUnauthorized: process.env.LLM_REJECT_UNAUTHORIZED !== 'false'
-    };
-  }
-
   constructor() {
     // Initialize with defaults, will be updated by init()
     this.provider = 'ollama';
@@ -153,106 +107,51 @@ class LLMService {
     });
   }
 
-  // Initialize the LLM service with settings from database or environment
+  // Initialize the LLM service with secure configuration
   async init() {
-    const settings = await this.getLLMSettings();
-    this.provider = settings.provider;
-    this.model = settings.model;
+    const config = await getSecureLLMConfig();
+    this.provider = config.provider;
+    this.model = config.model;
     
     if (this.provider === 'openai') {
-      // Get API key from the specified environment variable
-      const apiKey = settings.apiKeyEnvVar ? process.env[settings.apiKeyEnvVar] || '' : '';
-
-      // Prepare OpenAI client configuration
+      // Prepare OpenAI client configuration using secure config
       const clientConfig: any = {
-        apiKey,
+        apiKey: config.apiKey,
       };
 
-      // Set base URL (priority: proxyUrlEnvVar -> baseUrlEnvVar -> fallback to OpenAI default)
-      // Proxy URL takes precedence for security and routing control
-      const resolvedProxyUrl = settings.proxyUrlEnvVar ? process.env[settings.proxyUrlEnvVar] : null;
-      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : null;
-      
-      if (resolvedProxyUrl) {
-        clientConfig.baseURL = resolvedProxyUrl;
-      } else if (resolvedBaseUrl) {
-        clientConfig.baseURL = resolvedBaseUrl;
-      }
-      // If neither proxy nor base URL is set, OpenAI client will use its default endpoint
-
-      // Build complete headers from settings
-      let allHeaders: Record<string, string> = {};
-
-      // Add static custom headers
-      if (settings.customHeaders && typeof settings.customHeaders === 'object') {
-        allHeaders = { ...allHeaders, ...settings.customHeaders };
+      // Set base URL if provided
+      if (config.baseURL) {
+        clientConfig.baseURL = config.baseURL;
       }
 
-      // Add dynamic headers from environment variable mappings
-      if (Array.isArray(settings.headerMappings)) {
-        settings.headerMappings.forEach(({ headerName, envVariable }: { headerName: string; envVariable: string }) => {
-          const envValue = process.env[envVariable];
-          if (envValue) {
-            allHeaders[headerName] = envValue;
-          }
-        });
+      // Add custom headers if any exist
+      if (config.customHeaders && Object.keys(config.customHeaders).length > 0) {
+        clientConfig.defaultHeaders = config.customHeaders;
       }
 
-      // Add headers to client config if any exist
-      if (Object.keys(allHeaders).length > 0) {
-        clientConfig.defaultHeaders = allHeaders;
+      // SSL Configuration
+      if (config.sslOptions) {
+        const https = require('https');
+        
+        // Create HTTPS agent with SSL options
+        const agent = new https.Agent(config.sslOptions);
+        clientConfig.httpAgent = agent;
       }
-
-      // SSL Certificate Configuration
-      const fs = require('fs');
-      const https = require('https');
-      
-      // Build SSL agent options
-      const sslOptions: any = {};
-      
-      // Reject unauthorized certificates setting (default: true for security)
-      sslOptions.rejectUnauthorized = settings.rejectUnauthorized !== false;
-      
-      // CA Bundle
-      if (settings.caBundleEnvVar && process.env[settings.caBundleEnvVar]) {
-        try {
-          sslOptions.ca = fs.readFileSync(process.env[settings.caBundleEnvVar]);
-        } catch (error) {
-          console.warn(`Failed to read CA bundle file: ${error}`);
-        }
-      }
-      
-      // Client Certificate
-      if (settings.certFileEnvVar && process.env[settings.certFileEnvVar]) {
-        try {
-          sslOptions.cert = fs.readFileSync(process.env[settings.certFileEnvVar]);
-        } catch (error) {
-          console.warn(`Failed to read client certificate file: ${error}`);
-        }
-      }
-      
-      // Client Key
-      if (settings.keyFileEnvVar && process.env[settings.keyFileEnvVar]) {
-        try {
-          sslOptions.key = fs.readFileSync(process.env[settings.keyFileEnvVar]);
-        } catch (error) {
-          console.warn(`Failed to read client key file: ${error}`);
-        }
-      }
-
-      // Always create an HTTPS agent with SSL options (even if just rejectUnauthorized)
-      const agent = new https.Agent(sslOptions);
-      clientConfig.httpAgent = agent;
 
       this.client = new OpenAI(clientConfig);
     } else if (this.provider === 'ollama') {
-      // For Ollama, use baseUrlEnvVar if set, otherwise default to localhost
-      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : null;
-      const baseURL = resolvedBaseUrl || 'http://localhost:11434/v1';
-      this.client = new OpenAI({
-        baseURL,
-        apiKey: 'ollama', // Ollama doesn't require a real API key
-      });
+      // For Ollama, use the configured baseURL
+      const clientConfig: any = {
+        baseURL: config.baseURL,
+        apiKey: config.apiKey, // Should be 'ollama'
+      };
+
+      // Add custom headers if any exist
+      if (config.customHeaders && Object.keys(config.customHeaders).length > 0) {
+        clientConfig.defaultHeaders = config.customHeaders;
+      }
+
+      this.client = new OpenAI(clientConfig);
     } else {
       throw new Error(`Unsupported LLM provider: ${this.provider}`);
     }
