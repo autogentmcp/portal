@@ -1,163 +1,104 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSecureLLMConfig } from '@/lib/secure-llm-config';
 
-interface LLMSettings {
+interface SecureLLMSettings {
   provider: 'openai' | 'ollama';
   model: string;
-  apiKey?: string;
-  apiKeyEnvVar?: string;
-  baseUrlEnvVar?: string;  // Environment variable name for base URL (security)
-  proxyUrlEnvVar?: string; // Environment variable name for proxy URL (security)
   customHeaders?: Record<string, string>;
-  headerMappings?: Array<{ headerName: string; envVariable: string }>;
-  // SSL Certificate Configuration
-  caBundleEnvVar?: string;   // Environment variable name containing CA bundle file path
-  certFileEnvVar?: string;   // Environment variable name containing client certificate file path
-  keyFileEnvVar?: string;    // Environment variable name containing client key file path
-  rejectUnauthorized?: boolean; // Whether to reject unauthorized certificates
+  configurationStatus?: {
+    apiKeySet: boolean;
+    proxyUrlSet: boolean;
+    baseUrlSet: boolean;
+    customHeadersSet: boolean;
+    sslConfigured: boolean;
+  };
+  rejectUnauthorized?: boolean;
 }
 
-// Read current settings from environment
-function getCurrentSettings(): LLMSettings {
-  // Parse custom headers from environment variable if it exists
-  let customHeaders: Record<string, string> = {};
-  try {
-    if (process.env.LLM_CUSTOM_HEADERS) {
-      customHeaders = JSON.parse(process.env.LLM_CUSTOM_HEADERS);
-    }
-  } catch (error) {
-    console.warn('Failed to parse LLM_CUSTOM_HEADERS:', error);
+// Check configuration status from environment variables
+function getConfigurationStatus(provider: 'openai' | 'ollama') {
+  if (provider === 'openai') {
+    return {
+      apiKeySet: !!process.env.OPENAI_API_KEY,
+      proxyUrlSet: !!process.env.OPENAI_PROXY_URL,
+      baseUrlSet: !!process.env.OPENAI_BASE_URL,
+      customHeadersSet: !!process.env.OPENAI_CUSTOM_HEADERS,
+      sslConfigured: !!(process.env.OPENAI_CA_BUNDLE || process.env.OPENAI_CLIENT_CERT)
+    };
+  } else {
+    return {
+      apiKeySet: false, // Ollama doesn't require API key
+      proxyUrlSet: !!process.env.OLLAMA_PROXY_URL,
+      baseUrlSet: !!process.env.OLLAMA_BASE_URL,
+      customHeadersSet: !!process.env.OLLAMA_CUSTOM_HEADERS,
+      sslConfigured: false // Ollama typically doesn't use SSL certs
+    };
   }
+}
 
-  // Parse header mappings from environment variable if it exists
-  let headerMappings: Array<{ headerName: string; envVariable: string }> = [];
+// Read current settings from environment and database
+async function getCurrentSettings(): Promise<SecureLLMSettings> {
   try {
-    if (process.env.LLM_HEADER_MAPPINGS) {
-      headerMappings = JSON.parse(process.env.LLM_HEADER_MAPPINGS);
+    // Get database settings
+    const dbSettings = await (prisma as any).lLMSettings.findFirst({
+      where: {
+        isActive: true
+      }
+    });
+
+    let provider: 'openai' | 'ollama' = 'ollama';
+    let model = 'llama3.2';
+    let customHeaders: Record<string, string> = {};
+
+    if (dbSettings) {
+      provider = (dbSettings.provider as 'openai' | 'ollama') || 'ollama';
+      model = dbSettings.model || (provider === 'openai' ? 'gpt-4o-mini' : 'llama3.2');
+      
+      // Parse custom headers from JSON
+      if (dbSettings.customHeaders) {
+        try {
+          customHeaders = typeof dbSettings.customHeaders === 'string' 
+            ? JSON.parse(dbSettings.customHeaders) 
+            : dbSettings.customHeaders as Record<string, string>;
+        } catch (error) {
+          console.warn('Failed to parse custom headers from database:', error);
+        }
+      }
     }
+
+    // Get configuration status
+    const configurationStatus = getConfigurationStatus(provider);
+
+    return {
+      provider,
+      model,
+      customHeaders,
+      configurationStatus,
+      rejectUnauthorized: process.env.OPENAI_REJECT_UNAUTHORIZED !== 'false'
+    };
   } catch (error) {
-    console.warn('Failed to parse LLM_HEADER_MAPPINGS:', error);
+    console.error('Error getting current settings:', error);
+    // Return default settings
+    return {
+      provider: 'ollama',
+      model: 'llama3.2',
+      customHeaders: {},
+      configurationStatus: getConfigurationStatus('ollama'),
+      rejectUnauthorized: true
+    };
   }
-
-  // Build dynamic headers from environment variable mappings
-  const dynamicHeaders: Record<string, string> = {};
-  headerMappings.forEach(({ headerName, envVariable }) => {
-    const envValue = process.env[envVariable];
-    if (envValue) {
-      dynamicHeaders[headerName] = envValue;
-    }
-  });
-
-  // Merge static custom headers with dynamic headers (dynamic takes precedence)
-  const allHeaders = { ...customHeaders, ...dynamicHeaders };
-
-  // Determine API key source
-  const apiKeyEnvVar = process.env.LLM_API_KEY_ENV_VAR || 'LLM_API_KEY';
-  const apiKey = process.env[apiKeyEnvVar] || process.env.OPENAI_API_KEY || '';
-
-  return {
-    provider: (process.env.LLM_PROVIDER as 'openai' | 'ollama') || 'ollama',
-    model: process.env.LLM_MODEL || 'llama3.2',
-    apiKey,
-    apiKeyEnvVar,
-    baseUrlEnvVar: process.env.LLM_BASE_URL_ENV_VAR || '',
-    proxyUrlEnvVar: process.env.LLM_PROXY_URL_ENV_VAR || '',
-    customHeaders: allHeaders,
-    headerMappings,
-    // SSL Certificate Configuration
-    caBundleEnvVar: process.env.LLM_CA_BUNDLE_ENV_VAR || '',
-    certFileEnvVar: process.env.LLM_CERT_FILE_ENV_VAR || '',
-    keyFileEnvVar: process.env.LLM_KEY_FILE_ENV_VAR || '',
-    rejectUnauthorized: process.env.LLM_REJECT_UNAUTHORIZED !== 'false'
-  };
 }
 
 export async function GET() {
   try {
-    // Get settings from database first, fallback to environment variables
-    const dbSettings = await (prisma as any).lLMSettings.findFirst({
-      where: { isActive: true },
-      orderBy: { updatedAt: 'desc' }
-    });
-
-    if (dbSettings) {
-      // Use database settings with environment variable resolution for API key
-      const apiKey = dbSettings.apiKeyEnvVar ? process.env[dbSettings.apiKeyEnvVar] || '' : '';
-      
-      // Parse JSON fields
-      let customHeaders = {};
-      let headerMappings: Array<{ headerName: string; envVariable: string }> = [];
-      
-      try {
-        if (dbSettings.customHeaders) {
-          customHeaders = typeof dbSettings.customHeaders === 'string' 
-            ? JSON.parse(dbSettings.customHeaders) 
-            : dbSettings.customHeaders;
-        }
-      } catch (error) {
-        console.warn('Failed to parse custom headers from database:', error);
-      }
-
-      try {
-        if (dbSettings.headerMappings) {
-          headerMappings = typeof dbSettings.headerMappings === 'string'
-            ? JSON.parse(dbSettings.headerMappings)
-            : dbSettings.headerMappings;
-        }
-      } catch (error) {
-        console.warn('Failed to parse header mappings from database:', error);
-      }
-
-      // Build dynamic headers from environment variable mappings
-      const dynamicHeaders: Record<string, string> = {};
-      headerMappings.forEach(({ headerName, envVariable }) => {
-        const envValue = process.env[envVariable];
-        if (envValue) {
-          dynamicHeaders[headerName] = envValue;
-        }
-      });
-
-      // Merge static custom headers with dynamic headers
-      const allHeaders = { ...customHeaders, ...dynamicHeaders };
-
-      return NextResponse.json({
-        provider: dbSettings.provider as 'openai' | 'ollama',
-        model: dbSettings.model,
-        apiKey: apiKey ? '••••••••' : '',
-        apiKeyEnvVar: dbSettings.apiKeyEnvVar || '',
-        baseUrlEnvVar: dbSettings.baseUrlEnvVar || '',
-        proxyUrlEnvVar: dbSettings.proxyUrlEnvVar || '',
-        customHeaders: allHeaders,
-        headerMappings,
-        // SSL Certificate Configuration
-        caBundleEnvVar: dbSettings.caBundleEnvVar || '',
-        certFileEnvVar: dbSettings.certFileEnvVar || '',
-        keyFileEnvVar: dbSettings.keyFileEnvVar || '',
-        rejectUnauthorized: dbSettings.rejectUnauthorized
-      });
-    }
-
-    // Fallback to environment variables if no database settings
-    const settings = getCurrentSettings();
+    const settings = await getCurrentSettings();
     
-    // Don't send API key in response for security, just indicate if it's set
-    return NextResponse.json({
-      ...settings,
-      apiKey: settings.apiKey ? '••••••••' : '',
-      customHeaders: settings.customHeaders || {},
-      headerMappings: settings.headerMappings || [],
-      apiKeyEnvVar: settings.apiKeyEnvVar || 'LLM_API_KEY',
-      // SSL Certificate Configuration (include defaults)
-      caBundleEnvVar: settings.caBundleEnvVar || '',
-      certFileEnvVar: settings.certFileEnvVar || '',
-      keyFileEnvVar: settings.keyFileEnvVar || '',
-      rejectUnauthorized: settings.rejectUnauthorized !== undefined ? settings.rejectUnauthorized : true,
-      proxyUrlEnvVar: settings.proxyUrlEnvVar || ''
-    });
+    return NextResponse.json(settings);
   } catch (error) {
-    console.error('Error getting LLM settings:', error);
+    console.error('Error fetching LLM settings:', error);
     return NextResponse.json(
-      { error: 'Failed to get settings' },
+      { error: 'Failed to fetch LLM settings' },
       { status: 500 }
     );
   }
@@ -165,9 +106,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const settings: LLMSettings = await request.json();
+    const settings: SecureLLMSettings = await request.json();
 
-    // Validate required fields
+    // Validate the settings
     if (!settings.provider || !settings.model) {
       return NextResponse.json(
         { error: 'Provider and model are required' },
@@ -175,64 +116,74 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate OpenAI specific requirements
-    if (settings.provider === 'openai') {
-      if (!settings.apiKeyEnvVar) {
+    if (!['openai', 'ollama'].includes(settings.provider)) {
+      return NextResponse.json(
+        { error: 'Invalid provider. Must be "openai" or "ollama"' },
+        { status: 400 }
+      );
+    }
+
+    // Validate custom headers if provided
+    if (settings.customHeaders) {
+      try {
+        JSON.stringify(settings.customHeaders);
+      } catch (error) {
         return NextResponse.json(
-          { error: 'API key environment variable name is required for OpenAI provider' },
-          { status: 400 }
-        );
-      }
-      
-      // Check if the environment variable is actually set
-      const apiKeyValue = process.env[settings.apiKeyEnvVar];
-      if (!apiKeyValue) {
-        return NextResponse.json(
-          { error: `Environment variable '${settings.apiKeyEnvVar}' is not set or is empty` },
+          { error: 'Invalid custom headers format' },
           { status: 400 }
         );
       }
     }
 
-    // Validate Ollama specific requirements - allow if baseUrlEnvVar is set
-    if (settings.provider === 'ollama' && !settings.baseUrlEnvVar) {
-      // For Ollama, we'll use default localhost if no baseUrlEnvVar is provided
-      console.log('Ollama provider will use default localhost:11434 endpoint');
-    }
+    // Save to database
+    const settingsData = {
+      provider: settings.provider,
+      model: settings.model,
+      customHeaders: settings.customHeaders || {},
+      rejectUnauthorized: settings.rejectUnauthorized ?? true
+    };
 
-    // Deactivate previous settings
-    await (prisma as any).lLMSettings.updateMany({
-      where: { isActive: true },
-      data: { isActive: false }
-    });
-
-    // Create new settings record
-    const newSettings = await (prisma as any).lLMSettings.create({
-      data: {
-        provider: settings.provider,
-        model: settings.model,
-        apiKeyEnvVar: settings.apiKeyEnvVar || null,
-        baseUrlEnvVar: settings.baseUrlEnvVar || null,
-        proxyUrlEnvVar: settings.proxyUrlEnvVar || null,
-        customHeaders: settings.customHeaders ? JSON.stringify(settings.customHeaders) : null,
-        headerMappings: settings.headerMappings ? JSON.stringify(settings.headerMappings) : null,
-        // SSL Certificate Configuration
-        caBundleEnvVar: settings.caBundleEnvVar || null,
-        certFileEnvVar: settings.certFileEnvVar || null,
-        keyFileEnvVar: settings.keyFileEnvVar || null,
-        rejectUnauthorized: settings.rejectUnauthorized !== undefined ? settings.rejectUnauthorized : true,
+    await (prisma as any).lLMSettings.upsert({
+      where: { id: 'default' }, // Use a fixed ID for singleton settings
+      update: {
+        provider: settingsData.provider,
+        model: settingsData.model,
+        customHeaders: settingsData.customHeaders,
+        rejectUnauthorized: settingsData.rejectUnauthorized,
+        updatedAt: new Date()
+      },
+      create: {
+        id: 'default',
+        provider: settingsData.provider,
+        model: settingsData.model,
+        customHeaders: settingsData.customHeaders,
+        rejectUnauthorized: settingsData.rejectUnauthorized,
         isActive: true
       }
     });
 
+    // Update environment variables for custom headers if they were provided
+    if (settings.customHeaders && Object.keys(settings.customHeaders).length > 0) {
+      const envVarName = settings.provider === 'openai' 
+        ? 'OPENAI_CUSTOM_HEADERS' 
+        : 'OLLAMA_CUSTOM_HEADERS';
+      
+      // Note: In production, you would need to restart the application
+      // or use a configuration service to update environment variables
+      console.log(`To apply custom headers, set environment variable:`, {
+        [envVarName]: JSON.stringify(settings.customHeaders)
+      });
+    }
+
     return NextResponse.json({ 
-      message: 'Settings saved successfully to database.',
-      id: newSettings.id
+      message: 'LLM settings saved successfully',
+      configurationStatus: getConfigurationStatus(settings.provider)
     });
+
   } catch (error) {
     console.error('Error saving LLM settings:', error);
     return NextResponse.json(
-      { error: 'Failed to save settings' },
+      { error: 'Failed to save LLM settings' },
       { status: 500 }
     );
   }
