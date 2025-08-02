@@ -6,9 +6,7 @@ interface LLMSettings {
   model: string;
   apiKey?: string;
   apiKeyEnvVar?: string;
-  baseUrl?: string;
   baseUrlEnvVar?: string;  // Environment variable name for base URL (security)
-  proxyUrl?: string;
   proxyUrlEnvVar?: string; // Environment variable name for proxy URL (security)
   customHeaders?: Record<string, string>;
   headerMappings?: Array<{ headerName: string; envVariable: string }>;
@@ -62,8 +60,7 @@ function getCurrentSettings(): LLMSettings {
     model: process.env.LLM_MODEL || 'llama3.2',
     apiKey,
     apiKeyEnvVar,
-    baseUrl: process.env.LLM_BASE_URL || 'http://localhost:11434/v1',
-    proxyUrl: process.env.LLM_PROXY_URL || '',
+    baseUrlEnvVar: process.env.LLM_BASE_URL_ENV_VAR || '',
     proxyUrlEnvVar: process.env.LLM_PROXY_URL_ENV_VAR || '',
     customHeaders: allHeaders,
     headerMappings,
@@ -128,9 +125,7 @@ export async function GET() {
         model: dbSettings.model,
         apiKey: apiKey ? '••••••••' : '',
         apiKeyEnvVar: dbSettings.apiKeyEnvVar || '',
-        baseUrl: dbSettings.baseUrl || '',
         baseUrlEnvVar: dbSettings.baseUrlEnvVar || '',
-        proxyUrl: dbSettings.proxyUrl || '',
         proxyUrlEnvVar: dbSettings.proxyUrlEnvVar || '',
         customHeaders: allHeaders,
         headerMappings,
@@ -199,12 +194,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate Ollama specific requirements
-    if (settings.provider === 'ollama' && !settings.baseUrl) {
-      return NextResponse.json(
-        { error: 'Base URL is required for Ollama provider' },
-        { status: 400 }
-      );
+    // Validate Ollama specific requirements - allow if baseUrlEnvVar is set
+    if (settings.provider === 'ollama' && !settings.baseUrlEnvVar) {
+      // For Ollama, we'll use default localhost if no baseUrlEnvVar is provided
+      console.log('Ollama provider will use default localhost:11434 endpoint');
     }
 
     // Deactivate previous settings
@@ -220,9 +213,7 @@ export async function POST(request: NextRequest) {
         model: settings.model,
         apiKeyEnvVar: settings.apiKeyEnvVar || null,
         baseUrlEnvVar: settings.baseUrlEnvVar || null,
-        baseUrl: settings.baseUrl || null,
         proxyUrlEnvVar: settings.proxyUrlEnvVar || null,
-        proxyUrl: settings.proxyUrl || null,
         customHeaders: settings.customHeaders ? JSON.stringify(settings.customHeaders) : null,
         headerMappings: settings.headerMappings ? JSON.stringify(settings.headerMappings) : null,
         // SSL Certificate Configuration

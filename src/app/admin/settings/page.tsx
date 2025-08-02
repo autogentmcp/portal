@@ -8,9 +8,7 @@ interface LLMSettings {
   model: string
   apiKey?: string
   apiKeyEnvVar?: string
-  baseUrl?: string
   baseUrlEnvVar?: string
-  proxyUrl?: string
   proxyUrlEnvVar?: string
   customHeaders?: Record<string, string>
   headerMappings?: Array<{ headerName: string; envVariable: string }>
@@ -25,7 +23,6 @@ export default function AdminSettingsPage() {
   const [llmSettings, setLlmSettings] = useState<LLMSettings>({
     provider: 'ollama',
     model: 'llama3.2',
-    baseUrl: 'http://localhost:11434/v1',
     customHeaders: {},
     headerMappings: [],
     apiKeyEnvVar: 'LLM_API_KEY',
@@ -206,9 +203,7 @@ export default function AdminSettingsPage() {
                   }`}
                   onClick={() => updateSettings({ 
                     provider: 'ollama',
-                    baseUrl: 'http://localhost:11434/v1',
                     model: 'llama3.2',
-                    proxyUrl: '',
                     customHeaders: {}
                   })}
                 >
@@ -233,9 +228,7 @@ export default function AdminSettingsPage() {
                   }`}
                   onClick={() => updateSettings({ 
                     provider: 'openai',
-                    baseUrl: '',
                     model: 'gpt-4o-mini',
-                    proxyUrl: '',
                     customHeaders: {}
                   })}
                 >
@@ -315,25 +308,25 @@ export default function AdminSettingsPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="baseUrlOpenAI" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Base URL (Optional)
+                  <label htmlFor="baseUrlEnvVar" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Base URL Environment Variable (Optional)
                   </label>
                   <input
-                    type="url"
-                    id="baseUrlOpenAI"
-                    value={llmSettings.baseUrl || ''}
-                    onChange={(e) => updateSettings({ baseUrl: e.target.value })}
-                    placeholder="https://api.openai.com/v1 (default)"
+                    type="text"
+                    id="baseUrlEnvVar"
+                    value={llmSettings.baseUrlEnvVar || ''}
+                    onChange={(e) => updateSettings({ baseUrlEnvVar: e.target.value })}
+                    placeholder="OPENAI_BASE_URL"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Override the default OpenAI API endpoint. Leave empty for default.
+                    Environment variable containing custom OpenAI API base URL. Leave empty to use default OpenAI endpoint.
                   </p>
                 </div>
 
                 <div>
                   <label htmlFor="proxyUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Proxy URL Environment Variable (Optional)
+                    Proxy URL Environment Variable (Recommended)
                   </label>
                   <input
                     type="text"
@@ -344,24 +337,7 @@ export default function AdminSettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Environment variable containing the proxy URL for OpenAI API calls.
-                  </p>
-                </div>
-
-                <div>
-                  <label htmlFor="proxyUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Proxy URL (Optional - Fallback)
-                  </label>
-                  <input
-                    type="url"
-                    id="proxyUrl"
-                    value={llmSettings.proxyUrl || ''}
-                    onChange={(e) => updateSettings({ proxyUrl: e.target.value })}
-                    placeholder="https://your-proxy.com/openai"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Direct proxy URL (used only if environment variable above is not set).
+                    Environment variable containing the proxy URL for OpenAI API calls. This is the secure way to configure proxy URLs.
                   </p>
                 </div>
 
@@ -520,22 +496,22 @@ export default function AdminSettingsPage() {
               </>
             )}
 
-            {/* Ollama Base URL */}
+            {/* Ollama Base URL Environment Variable */}
             {llmSettings.provider === 'ollama' && (
               <div>
-                <label htmlFor="baseUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Base URL
+                <label htmlFor="baseUrlEnvVar" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Base URL Environment Variable (Optional)
                 </label>
                 <input
-                  type="url"
-                  id="baseUrl"
-                  value={llmSettings.baseUrl || ''}
-                  onChange={(e) => updateSettings({ baseUrl: e.target.value })}
-                  placeholder="http://localhost:11434/v1"
+                  type="text"
+                  id="baseUrlEnvVar"
+                  value={llmSettings.baseUrlEnvVar || ''}
+                  onChange={(e) => updateSettings({ baseUrlEnvVar: e.target.value })}
+                  placeholder="OLLAMA_BASE_URL"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  The URL where your Ollama server is running.
+                  Environment variable containing the Ollama server URL. Defaults to http://localhost:11434/v1 if not set.
                 </p>
               </div>
             )}

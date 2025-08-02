@@ -112,8 +112,7 @@ class LLMService {
           model: dbSettings.model,
           apiKeyEnvVar: dbSettings.apiKeyEnvVar,
           baseUrlEnvVar: dbSettings.baseUrlEnvVar,
-          baseUrl: dbSettings.baseUrl,
-          proxyUrl: dbSettings.proxyUrl,
+          proxyUrlEnvVar: dbSettings.proxyUrlEnvVar,
           customHeaders: dbSettings.customHeaders ? 
             (typeof dbSettings.customHeaders === 'string' ? JSON.parse(dbSettings.customHeaders) : dbSettings.customHeaders) : {},
           headerMappings: dbSettings.headerMappings ? 
@@ -134,8 +133,6 @@ class LLMService {
       model: process.env.LLM_MODEL || 'llama3.2',
       apiKeyEnvVar: process.env.LLM_API_KEY_ENV_VAR || 'LLM_API_KEY',
       baseUrlEnvVar: process.env.LLM_BASE_URL_ENV_VAR,
-      baseUrl: process.env.LLM_BASE_URL,
-      proxyUrl: process.env.LLM_PROXY_URL,
       proxyUrlEnvVar: process.env.LLM_PROXY_URL_ENV_VAR,
       customHeaders: process.env.LLM_CUSTOM_HEADERS ? JSON.parse(process.env.LLM_CUSTOM_HEADERS) : {},
       headerMappings: process.env.LLM_HEADER_MAPPINGS ? JSON.parse(process.env.LLM_HEADER_MAPPINGS) : [],
@@ -171,15 +168,17 @@ class LLMService {
         apiKey,
       };
 
-      // Set base URL (priority: baseUrlEnvVar -> baseUrl -> proxyUrlEnvVar -> proxyUrl)
-      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : settings.baseUrl;
-      const resolvedProxyUrl = settings.proxyUrlEnvVar ? process.env[settings.proxyUrlEnvVar] : settings.proxyUrl;
+      // Set base URL (priority: proxyUrlEnvVar -> baseUrlEnvVar -> fallback to OpenAI default)
+      // Proxy URL takes precedence for security and routing control
+      const resolvedProxyUrl = settings.proxyUrlEnvVar ? process.env[settings.proxyUrlEnvVar] : null;
+      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : null;
       
-      if (resolvedBaseUrl) {
-        clientConfig.baseURL = resolvedBaseUrl;
-      } else if (resolvedProxyUrl) {
+      if (resolvedProxyUrl) {
         clientConfig.baseURL = resolvedProxyUrl;
+      } else if (resolvedBaseUrl) {
+        clientConfig.baseURL = resolvedBaseUrl;
       }
+      // If neither proxy nor base URL is set, OpenAI client will use its default endpoint
 
       // Build complete headers from settings
       let allHeaders: Record<string, string> = {};
@@ -247,7 +246,9 @@ class LLMService {
 
       this.client = new OpenAI(clientConfig);
     } else if (this.provider === 'ollama') {
-      const baseURL = settings.baseUrl || 'http://localhost:11434/v1';
+      // For Ollama, use baseUrlEnvVar if set, otherwise default to localhost
+      const resolvedBaseUrl = settings.baseUrlEnvVar ? process.env[settings.baseUrlEnvVar] : null;
+      const baseURL = resolvedBaseUrl || 'http://localhost:11434/v1';
       this.client = new OpenAI({
         baseURL,
         apiKey: 'ollama', // Ollama doesn't require a real API key
